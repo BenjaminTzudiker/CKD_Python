@@ -1,8 +1,9 @@
 import psycopg2
+import sys
 
 # Set these values to those used by your database
-dbuser = "postgres"
-dbpass = "postgres"
+dbuser = "benjamintzudiker"
+dbpass = ""
 dbname = "ckd"
 dbhost = "localhost"
 
@@ -21,8 +22,11 @@ cursor = conn.cursor()
 def runQuery(query):
     try:
         cursor.execute("""{q}""".format(q = query))
-        return true
+        return True
     except:
         print("Query execution failed for query:\n" + query)
-        return false
-    
+        return False
+
+runQuery("select * from site_source;")
+for row in cursor.fetchall():
+    print(row)
