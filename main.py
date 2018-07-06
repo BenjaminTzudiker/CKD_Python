@@ -53,7 +53,13 @@ def runQuery(query):
 # Run.py setup functions
 #
 
+def setupAddPrimaryTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
+    pass
+
 def setupAddOneToOneTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
+    pass
+
+def setupAddOneToManyTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
     pass
 
 #
