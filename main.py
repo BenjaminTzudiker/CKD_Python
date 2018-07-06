@@ -53,22 +53,62 @@ def runQuery(query):
 # Run.py setup functions
 #
 
-def setupAddPrimaryTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
+def setupAddPrimaryTable(table, columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
     pass
 
-def setupAddOneToOneTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
+def setupAddOneToOneTable(table, columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
     pass
 
-def setupAddOneToManyTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
+def setupAddOneToManyTable(table, columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
     pass
 
 #
 # Setup helpers
 #
 
+class Column:
+    """
+    Stores information about a column that is needed to export it.
+    """
+    def __init__(self, n = "", dispn = n, t = "variable character"):
+        self.name = n
+        self.displayName = dispn
+        self.type = t
+
 class Table:
-    __init__(self):
-        pass
+    """
+    Stores information about a table that is needed to export it.
+    """
+    def __init__(self, n = "", col = [], key = None, ref = None, refKey = None):
+        self.name = n
+        self.columns = col
+        self.keyColumn = key
+        self.parentTable = ref
+        self.parentKeyColumn = refKey
+        self.displayKeyColumn = False
+        self.numberColumns = False
+
+class TableCreationException(Exception):
+    """
+    Custom exception thrown when incorrect table information is supplied to table setup functions.
+    """
+    pass
+
+def getTableFromName(name, collection = tableInfo):
+    """
+    Searches the collection for a table with the specified name.
+    
+    Accepts the name of the table as a string, optionally with a specific collection to search (defaults to tableInfo). Returns the first table object found with that name, or None if a table with that name isn't found.
+    """
+    return next(table for table in collection if table.name == name)
+
+def getColumnFromName(name, collection):
+    """
+    Searches the collection for a column with the specified name.
+    
+    Accepts the name of the column as a string and the collection to search. Returns the first column object found with that name, or None if a column with that name isn't found.
+    """
+    return next(column for column in collection if column.name == name)
 
 def countMaxEntriesWithKeyColumn(table, column):
     """

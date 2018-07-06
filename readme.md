@@ -26,5 +26,5 @@ Batch script that runs run.py.
 ./run.py
 Contains the information that describes how the export should take place, and calls the relevant functions in main.py.
 
-./run.dh
+./run.sh
 Shell script that runs run.py.
