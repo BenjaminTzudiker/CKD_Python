@@ -1,2 +1,2 @@
 %~dp0
-python3 python.py
+python3 run.py
