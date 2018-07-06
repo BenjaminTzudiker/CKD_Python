@@ -13,5 +13,7 @@ if runQuery("select * from site_source"):
     for row in cursor.fetchall():
         print(row)
 
+print(getAllColumnNamesFromTable("site_source"))
+
 # Closes the database connection
 close()

@@ -1,7 +1,8 @@
 import psycopg2
 import sys
 
-export = []
+# Contains the Table instances used to store export information. tableInfo[0] contains the primary table.
+tableInfo = []
 
 #
 # Main functions
@@ -44,19 +45,30 @@ def runQuery(query):
     try:
         cursor.execute("{q}".format(q = query))
         return True
-    except:
-        print("Query execution failed for query:\n" + query)
+    except Exception as e:
+        print("Query execution failed for query:\n" + query + "\n" + str(e))
         return False
 
 #
-# Setup helper functions
+# Run.py setup functions
 #
 
-def countMaxEntriesWithKeyColumn(column, table):
+def setupAddOneToOneTable(table, columns = [(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(table)], columnExportNames = columns, keyColumn = columns[0], parentTable = tableInfo[0].table, parentKeyColumn = keyColumn):
+    pass
+
+#
+# Setup helpers
+#
+
+class Table:
+    __init__(self):
+        pass
+
+def countMaxEntriesWithKeyColumn(table, column):
     """
     Counts the maximum number of rows that link to the same key.
     
-    Accepts the name of the column and table as strings. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
+    Accepts the names of the table and column as strings. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
     """
     cursor.fetchall()
     success = runQuery("select count(*) from {t} group by {c} order by count(*) limit 1".format(t = table, c = column))
@@ -67,13 +79,13 @@ def countMaxEntriesWithKeyColumn(column, table):
 
 def getAllColumnNamesFromTable(table):
     """
-    Returns a tuble containing all the column names in a table.
+    Returns a tuble containing all the column names and data types in a table.
     
-    Accepts the name of the table as a string. Returns a tuple containing the names of all the columns as strings, or an empty tuple if the query fails.
+    Accepts the name of the table as a string. Returns a tuple with one tuple entry per column (each containing the name and data type as strings), or an empty tuple if the query fails.
     """
     cursor.fetchall()
-    success = runQuery("select column_name from information_schema.columns where table_name = {t}".format(t = table))
+    success = runQuery("select column_name, data_type from information_schema.columns where table_name = '{t}'".format(t = table))
     if success:
-        return cursor.fetchone()
+        return cursor.fetchall()
     else:
         return tuple()
