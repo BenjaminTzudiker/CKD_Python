@@ -61,15 +61,22 @@ def run():
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     """
-    cursor.fetchall()
     runQuery("select count(*) from {t} where {w}".format(t = tableInfo[0].name, w = tableInfo[0].where))
     entries = cursor.fetchall()[0](0)
-    bar = Bar("Entries Completed", max = entries)
+    bar = Bar("Entries Completed", max = entries + 1)
     with open("export.csv", "w", encoding = "utf-8") as file:
         for table in tableInfo:
-            query = "select {c}from "
-            runQuery(query.format(c = ", ".join(table.columns.name)))
-            bar.next()
+            for i in range(table.maxEntries):
+                for column in table.columns:
+                    file.write(column.name + ",")
+        file.seek(-1, whence = os.SEEK_CUR)
+        file.write("\n")
+        bar.next()
+        """for primaryKey in 
+            for table in tableInfo:
+                query = "select {c}from {t}"
+                runQuery(query.format(c = ", ".join(table.columns.name), t = table.name))
+                bar.next()"""
     bar.finish()
 
 def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, where = None):
@@ -86,20 +93,16 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
     if keyColumnName == default:
         keyColumnName = columnNames[0]
-    try:
-        columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
-        keyColumn = getColumnFromName(keyColumnName, columns)
-        table = Table(tableName, columns, keyColumn)
-        table.displayKeyColumn = table.maxEntries > 1
-        table.where = where
-        if len(tableInfo) == 0:
-            tableInfo.append(table)
-        else:
-            tableInfo[0] = table
-        return table
-    except:
-        raise TableCreationException()
-        return None
+    columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+    keyColumn = getColumnFromName(keyColumnName, columns)
+    table = Table(tableName, columns, keyColumn)
+    table.displayKeyColumn = table.maxEntries > 1
+    table.where = where
+    if len(tableInfo) == 0:
+        tableInfo.append(table)
+    else:
+        tableInfo[0] = table
+    return table
 
 def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, where = None):
     """
@@ -122,20 +125,16 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
     if parentKeyColumnName == default:
         parentKeyColumnName = keyColumnName
     if not tableInfo[0] == None:
-        try:
-            columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
-            keyColumn = getColumnFromName(keyColumnName, columns)
-            parentTable = getTableFromName(parentTableName)
-            parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
-            table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-            table.maxEntries = parentTable.maxEntries
-            table.displayKeyColumn = table.maxEntries > 1
-            table.where = where
-            tableInfo.append(table)
-            return table
-        except:
-            raise TableCreationException()
-            return None
+        columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+        keyColumn = getColumnFromName(keyColumnName, columns)
+        parentTable = getTableFromName(parentTableName)
+        parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
+        table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
+        table.maxEntries = parentTable.maxEntries
+        table.displayKeyColumn = table.maxEntries > 1
+        table.where = where
+        tableInfo.append(table)
+        return table
     else:
         raise NoPrimaryTableException()
         return None
@@ -161,20 +160,16 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
     if parentKeyColumnName == default:
         parentKeyColumnName = keyColumnName
     if not tableInfo[0] == None:
-        try:
-            columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
-            keyColumn = getColumnFromName(keyColumnName, columns)
-            parentTable = getTableFromName(parentTableName)
-            parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
-            table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-            table.maxEntries = countMaxEntriesWithKeyColumn(table, keyColumn)
-            table.displayKeyColumn = table.maxEntries > 1
-            table.where = where
-            tableInfo.append(table)
-            return table
-        except:
-            raise TableCreationException()
-            return None
+        columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+        keyColumn = getColumnFromName(keyColumnName, columns)
+        parentTable = getTableFromName(parentTableName)
+        parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
+        table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
+        table.maxEntries = countMaxEntriesWithKeyColumn(table, keyColumn)
+        table.displayKeyColumn = table.maxEntries > 1
+        table.where = where
+        tableInfo.append(table)
+        return table
     else:
         raise NoPrimaryTableException()
         return None
@@ -207,12 +202,6 @@ class Table:
         self.displayKeyColumn = False
         self.maxEntries = 1
         self.where = None
-
-class TableCreationException(Exception):
-    """
-    Custom exception thrown when incorrect table information is supplied to table setup functions.
-    """
-    pass
 
 class NoPrimaryTableException(Exception):
     """
@@ -255,7 +244,6 @@ def countMaxEntriesWithKeyColumn(table):
     
     Accepts the table as a table object. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
     """
-    cursor.fetchall()
     nextTable = table
     success = runQuery(countMaxEntriesWithKeyColumnQueryConstructor(table))
     if success:
@@ -290,7 +278,6 @@ def getAllColumnNamesFromTableName(tableName):
     
     Accepts the table name as a string. Returns a tuple with one tuple entry per column (each containing the name and data type as strings), or an empty tuple if the query fails.
     """
-    cursor.fetchall()
     success = runQuery("select column_name, data_type from information_schema.columns where table_name = '{t}'".format(t = tableName))
     if success:
         return cursor.fetchall()
