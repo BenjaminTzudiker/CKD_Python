@@ -165,7 +165,7 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         parentTable = getTableFromName(parentTableName)
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-        table.maxEntries = countMaxEntriesWithKeyColumn(table, keyColumn)
+        table.maxEntries = countMaxEntriesWithKeyColumn(table)
         table.displayKeyColumn = table.maxEntries > 1
         table.where = where
         tableInfo.append(table)
@@ -215,7 +215,12 @@ def getTableFromName(name, collection = tableInfo):
     
     Accepts the name of the table as a string, optionally with a specific collection to search (defaults to tableInfo). Returns the first table object found with that name, or None if a table with that name isn't found.
     """
-    return next(table for table in collection if table.name == name)
+    for table in collection:
+        if table.name == name:
+            return table
+    else:
+        print("No table with name " + name + " found.")
+        return None
 
 def getColumnFromName(name, collection):
     """
@@ -223,7 +228,12 @@ def getColumnFromName(name, collection):
     
     Accepts the name of the column as a string and the collection to search. Returns the first column object found with that name, or None if a column with that name isn't found.
     """
-    return next(column for column in collection if column.name == name)
+    for column in collection:
+        if column.name == name:
+            return column
+    else:
+        print("No column with name " + name + " found.")
+        return None
 
 '''def countMaxEntriesWithKeyColumnPrimary(table, column):
     """
@@ -259,7 +269,7 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
         originalTable = table
     if count == 0:
         count += 1
-        return "select count(distinct {ta}.{c}) from {t} as {ta}".format(t = table.name, c = column.name, ta = countMaxEntriesWithKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count)
+        return "select count(distinct {ta}.{c}) from {t} as {ta}".format(t = table.name, c = table.keyColumn.name, ta = countMaxEntriesWithKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count)
     elif (table == tableInfo[0] or table.parentTable == None):
         return "group by {c} order by count({origta}.{origc}) limit 1".format(c = table.keyColumn.name, origta = countMaxEntriesWithKeyColumnAlias(), origc = orignalTable.keyColumn.name)
     else:

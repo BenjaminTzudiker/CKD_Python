@@ -17,7 +17,7 @@ cursor = connect(dbuser, dbpass, dbname, dbhost)
 #setupAddPrimaryTable("patient", keyColumnName = "patient_id", where = primaryTableWhereStatement)
 
 setupAddPrimaryTable("site_source", keyColumnName = "site_source")
-setupAddOneToManyTable("site_source_temp", keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source")
+setupAddOneToManyTable("site_source_test", keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source")
 run()
 
 print(getAllColumnNamesFromTableName("site_source"))
