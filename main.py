@@ -119,11 +119,10 @@ def setupAddOneToManyTable(tableName, columnNames = [col[0] for col in getAllCol
             parentTable = getTableFromName(parentTableName)
             parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
             table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
+            table.maxEntries = countMaxEntriesWithKeyColumn(table, keyColumn)
             if parentTable == tableInfo[0].table and parentKeyColumn == tableInfo[0].table.keyColumn:
-                table.maxEntries = countMaxEntriesWithKeyColumnPrimary(table, keyColumn)
                 pass
             else:
-                table.maxEntries = countMaxEntriesWithKeyColumnSecondary(table, keyColumn, parentTable, parentKeyColumn)
                 pass
             tableInfo.append(table);
             return table
@@ -191,9 +190,9 @@ def getColumnFromName(name, collection):
     """
     return next(column for column in collection if column.name == name)
 
-def countMaxEntriesWithKeyColumnPrimary(table, column):
+'''def countMaxEntriesWithKeyColumnPrimary(table, column):
     """
-    Counts the maximum number of rows that link to the same key.
+    Counts the maximum number of rows that link to the same primary key.
     
     Accepts the table and column as table and column objects. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
     """
@@ -202,10 +201,32 @@ def countMaxEntriesWithKeyColumnPrimary(table, column):
     if success:
         return int(cursor.fetchone()[0])
     else:
+        return 0'''
+
+def countMaxEntriesWithKeyColumn(table, keyColumn):
+    """
+    Counts the maximum number of rows that link to the same key in the primary table.
+    
+    Accepts the table and column as table and column objects. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
+    """
+    cursor.fetchall()
+    nextTable = table
+    query = "select count(*) from {t}".format(t = table.name, c = column.name)
+    while not (nextTable == None or nextTable == tableInfo[0]):
+        query = query + "()".format()
+        nextTable = nextTable.parentTable
+    query = query + " group by {c} order by count(*) limit 1"
+    success = runQuery("")
+    if success:
+        return int(cursor.fetchone()[0])
+    else:
         return 0
 
-def countMaxEntriesWithKeyColumnSecondary(table, keyColumn, parentTable, parentKeyColumn):
-    pass
+def countMaxEntriesWithKeyColumnHelper(table, keyColumn):
+    if (table.parentTable == tableInfo[0] or table == tableInfo[0] or table.parentTable == None):
+        return ""
+    else:
+        return " where ()"
 
 def getAllColumnNamesFromTable(tableName):
     """
