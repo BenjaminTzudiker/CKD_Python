@@ -1,6 +1,9 @@
 import psycopg2
 import sys
 
+# Default sentinel value for function default checking
+default = object()
+
 # Contains the Table instances used to store export information. tableInfo[0] contains the primary table.
 tableInfo = []
 
@@ -50,93 +53,6 @@ def runQuery(query):
         return False
 
 #
-# Run.py setup functions
-#
-
-def setupAddPrimaryTable(tableName, columnNames = [col[0] for col in getAllColumnNamesFromTable(tableName)], keyColumnName = columns[0], where = None):
-    """
-    Stores the export settings for the primary table.
-    
-    Keyword arguments:
-    tableName -- The name of the table, string
-    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
-    """
-    try:
-        table = Table(tableName, columns, keyColumn)
-        tableInfo[0] = table
-        return table
-    except:
-        raise TableCreationException()
-        return None
-
-def setupAddOneToOneTable(tableName, columnNames = [col[0] for col in getAllColumnNamesFromTable(tableName)], keyColumnName = columns[0], parentTableName = tableInfo[0].table.name, parentKeyColumnName = keyColumnName, where = None):
-    """
-    Stores the export settings for a table with a one-to-one relationship to the parent table.
-    
-    Keyword arguments:
-    tableName -- The name of the table, string
-    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
-    parentTableName -- The name of the table that the key links to, string (default primary table name)
-    parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
-    """
-    if not tableInfo[0] == None:
-        try:
-            columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(tableName) if col[0] in columnNames]
-            keyColumn = getColumnFromName(keyColumnName, columns)
-            parentTable = getTableFromName(parentTableName)
-            parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
-            table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-            table.maxEntries = parentTable.maxEntries
-            tableInfo.append(table);
-            return table
-        except:
-            raise TableCreationException()
-            return None
-    else:
-        raise NoPrimaryTableException()
-        return None
-
-def setupAddOneToManyTable(tableName, columnNames = [col[0] for col in getAllColumnNamesFromTable(tableName)], keyColumnName = columnNames[0], parentTableName = tableInfo[0].table.name, parentKeyColumnName = keyColumnName, where = None):
-    """
-    Stores the export settings for a table with a one-to-many relationship to the primary table.
-    
-    Keyword arguments:
-    tableName -- The name of the table, string
-    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default first column name in columnNames)
-    parentTableName -- The name of the table that the key links to, string (default primary table name)
-    parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
-    """
-    if not tableInfo[0] == None:
-        try:
-            columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTable(tableName) if col[0] in columnNames]
-            keyColumn = getColumnFromName(keyColumnName, columns)
-            parentTable = getTableFromName(parentTableName)
-            parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
-            table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-            table.maxEntries = countMaxEntriesWithKeyColumn(table, keyColumn)
-            if parentTable == tableInfo[0].table and parentKeyColumn == tableInfo[0].table.keyColumn:
-                pass
-            else:
-                pass
-            tableInfo.append(table);
-            return table
-        except:
-            raise TableCreationException()
-            return None
-    else:
-        raise NoPrimaryTableException()
-        return None
-
-def run():
-    pass
-
-#
 # Setup helpers
 #
 
@@ -144,7 +60,9 @@ class Column:
     """
     Stores information about a column that is needed to export it.
     """
-    def __init__(self, n = "", dispn = n, t = "variable character"):
+    def __init__(self, n = "", dispn = default, t = "variable character"):
+        if dispn == default:
+            dispn = n
         self.name = n
         self.displayName = dispn
         self.type = t
@@ -203,32 +121,42 @@ def getColumnFromName(name, collection):
     else:
         return 0'''
 
-def countMaxEntriesWithKeyColumn(table, keyColumn):
+def countMaxEntriesWithKeyColumn(table):
     """
     Counts the maximum number of rows that link to the same key in the primary table.
     
-    Accepts the table and column as table and column objects. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
+    Accepts the table as a table object. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
     """
     cursor.fetchall()
     nextTable = table
-    query = "select count(*) from {t}".format(t = table.name, c = column.name)
-    while not (nextTable == None or nextTable == tableInfo[0]):
-        query = query + "()".format()
-        nextTable = nextTable.parentTable
-    query = query + " group by {c} order by count(*) limit 1"
-    success = runQuery("")
+    success = runQuery(countMaxEntriesWithKeyColumnQueryConstructor(table))
     if success:
         return int(cursor.fetchone()[0])
     else:
         return 0
 
-def countMaxEntriesWithKeyColumnHelper(table, keyColumn):
-    if (table.parentTable == tableInfo[0] or table == tableInfo[0] or table.parentTable == None):
-        return ""
+def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default, count = 0):
+    """
+    Helper function used to construct the query for countMaxEntriesWithKeyColumn.
+    """
+    if originalTable == default:
+        originalTable = table
+    if count == 0:
+        count += 1
+        return "select count(distinct {ta}.{c}) from {t} as {ta}".format(t = table.name, c = column.name, ta = countMaxEntriesWithKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count)
+    elif (table == tableInfo[0] or table.parentTable == None):
+        return "group by {c} order by count({origta}.{origc}) limit 1".format(c = table.keyColumn.name, origta = countMaxEntriesWithKeyColumnAlias(), origc = orignalTable.keyColumn.name)
     else:
-        return " where ()"
+        count += 1
+        return " inner join {ref} as {refa} on {ta}.{c} = {refa}.{cref}".format(ref = table.parentTable.name, c = table.keyColumn.name, cref = table.parentTable.keyColumn.name, refa = countMaxEntriesWithKeyColumnAlias(count), ta = countMaxEntriesWithKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count)
 
-def getAllColumnNamesFromTable(tableName):
+def countMaxEntriesWithKeyColumnAlias(count = 0):
+    """
+    Helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
+    """
+    return "z" * (count + 1)
+
+def getAllColumnNamesFromTableName(tableName):
     """
     Returns a tuble containing all the column names and data types in a table.
     
@@ -240,3 +168,118 @@ def getAllColumnNamesFromTable(tableName):
         return cursor.fetchall()
     else:
         return tuple()
+
+#
+# Run.py setup functions
+#
+
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, where = None):
+    """
+    Stores the export settings for the primary table.
+    
+    Keyword arguments:
+    tableName -- The name of the table, string
+    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
+    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
+    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    """
+    if columnNames == default:
+        columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
+    if keyColumnName == default:
+        keyColumnName = columnNames[0]
+    try:
+        columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+        keyColumn = getColumnFromName(keyColumnName, columns)
+        table = Table(tableName, columns, keyColumn)
+        table.displayKeyColumn = table.maxEntries > 1
+        if len(tableInfo) == 0:
+            tableInfo.append(table)
+        else:
+            tableInfo[0] = table
+        return table
+    except:
+        raise TableCreationException()
+        return None
+
+def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, where = None):
+    """
+    Stores the export settings for a table with a one-to-one relationship to the parent table.
+    
+    Keyword arguments:
+    tableName -- The name of the table, string
+    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
+    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
+    parentTableName -- The name of the table that the key links to, string (default primary table name)
+    parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
+    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    """
+    if columnNames == default:
+        columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
+    if keyColumnName == default:
+        keyColumnName = columnNames[0]
+    if parentTableName == default:
+        parentTableName = tableInfo[0].table.name
+    if parentKeyColumnName == default:
+        parentKeyColumnName = keyColumnName
+    if not tableInfo[0] == None:
+        try:
+            columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+            keyColumn = getColumnFromName(keyColumnName, columns)
+            parentTable = getTableFromName(parentTableName)
+            parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
+            table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
+            table.maxEntries = parentTable.maxEntries
+            table.displayKeyColumn = table.maxEntries > 1
+            tableInfo.append(table)
+            return table
+        except:
+            raise TableCreationException()
+            return None
+    else:
+        raise NoPrimaryTableException()
+        return None
+
+def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, where = None):
+    """
+    Stores the export settings for a table with a one-to-many relationship to the primary table.
+    
+    Keyword arguments:
+    tableName -- The name of the table, string
+    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
+    keyColumnName -- The name of the column used as the primary key for the table, string (default first column name in columnNames)
+    parentTableName -- The name of the table that the key links to, string (default primary table name)
+    parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
+    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    """
+    if columnNames == default:
+        columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
+    if keyColumnName == default:
+        keyColumnName = columnNames[0]
+    if parentTableName == default:
+        parentTableName = tableInfo[0].table.name
+    if parentKeyColumnName == default:
+        parentKeyColumnName = keyColumnName
+    if not tableInfo[0] == None:
+        try:
+            columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+            keyColumn = getColumnFromName(keyColumnName, columns)
+            parentTable = getTableFromName(parentTableName)
+            parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
+            table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
+            table.maxEntries = countMaxEntriesWithKeyColumn(table, keyColumn)
+            table.displayKeyColumn = table.maxEntries > 1
+            if parentTable == tableInfo[0].table and parentKeyColumn == tableInfo[0].table.keyColumn:
+                pass
+            else:
+                pass
+            tableInfo.append(table)
+            return table
+        except:
+            raise TableCreationException()
+            return None
+    else:
+        raise NoPrimaryTableException()
+        return None
+
+def run():
+    pass
