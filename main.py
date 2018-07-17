@@ -83,12 +83,10 @@ def run():
         runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
         primaryKeys = cursor.fetchall()
         print(primaryKeys)
-        """for primaryKey in primaryKeys:
+        for primaryKey in primaryKeys:
             for table in tableInfo:
-                query = "select {c} from {t}"
-                query += " where 
-                runQuery(query.format(c = ", ".join(table.columns.name), t = table.name))
-                bar.next()"""
+                tableData = entryTableExportData(table)
+                bar.next()
     bar.finish()
 
 def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
@@ -99,6 +97,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     tableName -- The name of the table, string
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
     keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
+    displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
     if columnNames == default:
@@ -126,6 +125,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
     keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
+    displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
     if columnNames == default:
@@ -161,6 +161,7 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
     keyColumnName -- The name of the column used as the primary key for the table, string (default first column name in columnNames)
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
+    displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
     if columnNames == default:
@@ -248,6 +249,29 @@ def getColumnFromName(name, collection):
         print("No column with name " + name + " found.")
         return None
 
+def entryTableExportData(table):
+    """
+    Returns a list containing the entries for a table as a 2D list of strings.
+    """
+    pass
+
+def entryTableExportDataQueryConstructor(table, originalTable = default, count = 0):
+    """
+    Recursive helper function used to construct the query for entryTableExportData.
+    """
+    if originalTable == default:
+        originalTable = table
+    if count == 0:
+        columns = table.columns
+        if not table.displayKeyColumn
+            try:
+                columns.remove(table.keyColumn)
+            except:
+                print("Key column {c} not found in table {t}.".format(c = table.keyColumn.name, t = table.name))
+        return "select {ta}.{c} from {t} as {ta}".format(t = table.name, c = "{ta}, ".format(ta = countKeyColumnAlias().join(columns)), ta = countKeyColumnAlias()) + entryTableExportDataQueryConstructor(table, originalTable, count + 1)
+    elif (table == tableInfo[0] or table.parentTable == None):
+        pass
+
 '''def countMaxEntriesWithKeyColumnPrimary(table, column):
     """
     Counts the maximum number of rows that link to the same primary key.
@@ -267,7 +291,6 @@ def countMaxEntriesWithKeyColumn(table):
     
     Accepts the table as a table object. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
     """
-    nextTable = table
     success = runQuery(countMaxEntriesWithKeyColumnQueryConstructor(table))
     if success:
         return int(cursor.fetchone()[0])
@@ -291,7 +314,7 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
 
 def countKeyColumnAlias(count = 0):
     """
-    Helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
+    Recursive helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
     """
     return "z" * (count + 1)
 
