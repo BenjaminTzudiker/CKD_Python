@@ -85,8 +85,14 @@ def run():
         print(primaryKeys)
         for primaryKey in primaryKeys:
             for table in tableInfo:
-                tableData = entryTableExportData(table)
-                bar.next()
+                tableData = entryTableExportData(table, primaryKey[0])
+                for entryData in tableData:
+                    for data in entryData:
+                        file.write(str(data) + ",")
+                file.write("," * ((table.maxEntries - len(tableData)) * len(tableData[0])))
+            file.seek(file.tell() - 1)
+            file.write("\n")
+            bar.next()
     bar.finish()
 
 def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
@@ -249,41 +255,34 @@ def getColumnFromName(name, collection):
         print("No column with name " + name + " found.")
         return None
 
-def entryTableExportData(table):
+def entryTableExportData(table, primaryKey):
     """
-    Returns a list containing the entries for a table as a 2D list of strings.
+    Returns a list containing the entries for a table to be written to the exported csv file.
+    
+    Accepts the exported table as a table object and the primary key in the primary table. Returns a list of tuples (one tuple for each matching entry) if the query succeeds, or None if the query fails.
     """
-    pass
+    success = runQuery(entryTableExportDataQueryConstructor(table, primaryKey))
+    if success:
+        return cursor.fetchall()
+    else:
+        return None
 
-def entryTableExportDataQueryConstructor(table, originalTable = default, count = 0):
+def entryTableExportDataQueryConstructor(table, primaryKey, count = 0):
     """
     Recursive helper function used to construct the query for entryTableExportData.
     """
-    if originalTable == default:
-        originalTable = table
     if count == 0:
         columns = table.columns
-        if not table.displayKeyColumn
+        if not table.displayKeyColumn:
             try:
                 columns.remove(table.keyColumn)
             except:
                 print("Key column {c} not found in table {t}.".format(c = table.keyColumn.name, t = table.name))
-        return "select {ta}.{c} from {t} as {ta}".format(t = table.name, c = "{ta}, ".format(ta = countKeyColumnAlias().join(columns)), ta = countKeyColumnAlias()) + entryTableExportDataQueryConstructor(table, originalTable, count + 1)
+        return "select {c} from {t} as {ta} where {q}".format(t = table.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in columns), ta = countKeyColumnAlias(), q = entryTableExportDataQueryConstructor(table, primaryKey, count + 1))
     elif (table == tableInfo[0] or table.parentTable == None):
-        pass
-
-'''def countMaxEntriesWithKeyColumnPrimary(table, column):
-    """
-    Counts the maximum number of rows that link to the same primary key.
-    
-    Accepts the table and column as table and column objects. Returns the number of lines as an int if the query succeeds, or zero if the query fails.
-    """
-    cursor.fetchall()
-    success = runQuery("select count(*) from {t} group by {c} order by count(*) limit 1".format(t = table.name, c = column.name))
-    if success:
-        return int(cursor.fetchone()[0])
+        return "{ta}.{c} = {value}".format(ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, value = "{quotes}{v}{quotes}".format(v = primaryKey, quotes = "," if table.keyColumn.type == "variable character" else ""))
     else:
-        return 0'''
+        return "exists(select 1 from {ref} as {refa} where {ta}.{c} = {refa}.{refc} and {q})".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, refc = table.parentTable.keyColumn.name, q = entryTableExportDataQueryConstructor(table.parentTable, primaryKey, count + 1))
 
 def countMaxEntriesWithKeyColumn(table):
     """
@@ -304,13 +303,11 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
     if originalTable == default:
         originalTable = table
     if count == 0:
-        count += 1
-        return "select count({ta}.{c}) from {t} as {ta}".format(t = table.name, c = table.keyColumn.name, ta = countKeyColumnAlias()) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count)
+        return "select count({ta}.{c}) from {t} as {ta}".format(t = table.name, c = table.keyColumn.name, ta = countKeyColumnAlias()) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count + 1)
     elif (table == tableInfo[0] or table.parentTable == None):
-        return " group by {c} order by count({origta}.{origc}) desc limit 1".format(c = table.keyColumn.name, origta = countKeyColumnAlias(), origc = originalTable.keyColumn.name)
+        return " group by {ta}.{c} order by count({origta}.{origc}) desc limit 1".format(ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, origta = countKeyColumnAlias(), origc = originalTable.keyColumn.name)
     else:
-        count += 1
-        return " inner join {ref} as {refa} on {ta}.{c} = {refa}.{cref}".format(ref = table.parentTable.name, c = table.keyColumn.name, cref = table.parentTable.keyColumn.name, refa = countMaxEntriesWithKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count)
+        return " inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc}".format(ref = table.parentTable.name, c = table.keyColumn.name, refc = table.parentTable.keyColumn.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count + 1)
 
 def countKeyColumnAlias(count = 0):
     """
