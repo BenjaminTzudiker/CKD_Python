@@ -78,18 +78,24 @@ def run():
                         file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
         file.seek(file.tell() - 1)
         file.write("\n")
-        print("Writing entries...")
-        bar = Bar("Entries Completed", max = entries)
+        print("Querying primary table keys...")
         # Get list of keys for primary table
         query = "select {c} from {t}"
         if not (tableInfo[0].where == None or tableInfo[0].where == ""):
             query += " where {w}"
         runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
         primaryKeys = cursor.fetchall()
-        print(primaryKeys)
+        print("Writing entries...")
+        bar = Bar("Entries Completed", max = entries)
         for primaryKey in primaryKeys:
             for table in tableInfo:
-                tableData = entryTableExportData(table, primaryKey[0])
+                tableData = None
+                if table.keyBuffer == None:
+                    tableData = entryTableExportNoBufferData(table, primaryKey[0])
+                elif len(table.keyBuffer) == 0:
+                    tableData = entryTableExportNoBufferData(table, primaryKey[0])
+                else:
+                    pass
                 for entryData in tableData:
                     for data in entryData:
                         file.write(str(data) + ",")
@@ -99,7 +105,7 @@ def run():
             bar.next()
     bar.finish()
 
-def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, keyBuffer = True):
     """
     Stores the export settings for the primary table.
     
@@ -108,7 +114,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
     keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    keyBuffer -- Toggles storing key values in memory which may speed up the export process, boolean (default True)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -127,7 +133,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Primary table {t} added.".format(t = tableName))
     return table
 
-def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, where = None):
+def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, keyBuffer = True):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -138,7 +144,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    keyBuffer -- Toggles storing key values in memory which may speed up the export process, boolean (default True)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -233,6 +239,10 @@ class Table:
         self.displayKeyColumn = True
         self.maxEntries = 1
         self.where = None
+        self.keyBuffer = []
+    
+    def createKeyBuffer():
+        pass
 
 class NoPrimaryTableException(Exception):
     """
@@ -266,19 +276,19 @@ def getColumnFromName(name, collection):
         print("No column with name " + name + " found.")
         return None
 
-def entryTableExportData(table, primaryKey):
+def entryTableExportNoBufferData(table, primaryKey):
     """
     Returns a list containing the entries for a table to be written to the exported csv file.
     
     Accepts the exported table as a table object and the primary key in the primary table. Returns a list of tuples (one tuple for each matching entry) if the query succeeds, or None if the query fails.
     """
-    success = runQuery(entryTableExportDataQueryConstructor(table, primaryKey))
+    success = runQuery(entryTableExportDataNoBufferQueryConstructor(table, primaryKey))
     if success:
         return cursor.fetchall()
     else:
         return None
 
-def entryTableExportDataQueryConstructor(table, primaryKey, count = 0):
+def entryTableExportDataNoBufferQueryConstructor(table, primaryKey, count = 0):
     """
     Recursive helper function used to construct the query for entryTableExportData.
     """
