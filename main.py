@@ -78,16 +78,9 @@ def run():
                         file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
         file.seek(file.tell() - 1)
         file.write("\n")
-        print("Querying primary table keys...")
-        # Get list of keys for primary table
-        query = "select {c} from {t}"
-        if not (tableInfo[0].where == None or tableInfo[0].where == ""):
-            query += " where {w}"
-        runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
-        primaryKeys = cursor.fetchall()
         print("Writing entries...")
         bar = Bar("Entries Completed", max = entries)
-        for primaryKey in primaryKeys:
+        for primaryKey in tableInfo[0].keyBuffer:
             for table in tableInfo:
                 tableData = None
                 if table.keyBuffer == None:
@@ -126,6 +119,12 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     table = Table(tableName, columns, keyColumn)
     table.displayKeyColumn = displayKeyColumn
     table.where = where
+    query = "select {c} from {t}"
+    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+        query += " where {w}"
+    runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
+    primaryKeys = cursor.fetchall()
+    table.keyBuffer = tuple(key[0] for key in primaryKeys)
     if len(tableInfo) == 0:
         tableInfo.append(table)
     else:
@@ -164,6 +163,9 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         table.maxEntries = parentTable.maxEntries
         print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
+        if keyBuffer:
+            print("Creating key buffer...")
+            createKeyBuffer(table)
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -202,6 +204,9 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         table.maxEntries = countMaxEntriesWithKeyColumn(table)
         print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
+        if keyBuffer:
+            print("Creating key buffer...")
+            createKeyBuffer(table)
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -237,7 +242,7 @@ class Table:
         self.displayKeyColumn = True
         self.maxEntries = 1
         self.where = None
-        self.keyBuffer = []
+        self.keyBuffer = tuple()
 
 class NoPrimaryTableException(Exception):
     """
@@ -274,7 +279,7 @@ def getColumnFromName(name, collection):
 def createKeyBuffer(table):
     pass
 
-def createKeyBufferQueryConstructor():
+def createKeyBufferQueryConstructor(table):
     pass
 
 def entryTableExportData(table, primaryKey):
