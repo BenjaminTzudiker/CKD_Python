@@ -1,3 +1,3 @@
 cd %~dp0
-python3 run.py
+py run.py
 cmd \k
