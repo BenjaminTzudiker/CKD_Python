@@ -20,7 +20,5 @@ setupAddPrimaryTable("site_source", keyColumnName = "site_source")
 setupAddOneToManyTable("site_source_test", keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source")
 run()
 
-print(getAllColumnNamesFromTableName("site_source"))
-
 # Closes the database connection
 close()

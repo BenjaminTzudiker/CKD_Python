@@ -61,25 +61,37 @@ def run():
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     """
-    runQuery("select count(*) from {t} where {w}".format(t = tableInfo[0].name, w = tableInfo[0].where))
-    entries = cursor.fetchall()[0](0)
-    bar = Bar("Entries Completed", max = entries + 1)
-    with open("export.csv", "w", encoding = "utf-8") as file:
+    query = "select count(*) from {t}"
+    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+        query += " where {w}"
+    runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
+    entries = cursor.fetchall()[0][0]
+    with open("export.csv", "w+", encoding = "utf-8") as file:
+        # Write column names to top of csv
         for table in tableInfo:
             for i in range(table.maxEntries):
                 for column in table.columns:
-                    file.write(column.name + ",")
-        file.seek(-1, whence = os.SEEK_CUR)
+                    if (not column == table.keyColumn) or (table.displayKeyColumn):
+                        file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
+        file.seek(file.tell() - 1)
         file.write("\n")
-        bar.next()
-        """for primaryKey in 
+        bar = Bar("Entries Completed", max = entries)
+        # Get list of keys for primary table
+        query = "select {c} from {t}"
+        if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+            query += " where {w}"
+        runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
+        primaryKeys = cursor.fetchall()
+        print(primaryKeys)
+        """for primaryKey in primaryKeys:
             for table in tableInfo:
-                query = "select {c}from {t}"
+                query = "select {c} from {t}"
+                query += " where 
                 runQuery(query.format(c = ", ".join(table.columns.name), t = table.name))
                 bar.next()"""
     bar.finish()
 
-def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, where = None):
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
     """
     Stores the export settings for the primary table.
     
@@ -96,7 +108,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
     keyColumn = getColumnFromName(keyColumnName, columns)
     table = Table(tableName, columns, keyColumn)
-    table.displayKeyColumn = table.maxEntries > 1
+    table.displayKeyColumn = displayKeyColumn
     table.where = where
     if len(tableInfo) == 0:
         tableInfo.append(table)
@@ -104,7 +116,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         tableInfo[0] = table
     return table
 
-def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, where = None):
+def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, where = None):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -131,7 +143,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.maxEntries = parentTable.maxEntries
-        table.displayKeyColumn = table.maxEntries > 1
+        table.displayKeyColumn = displayKeyColumn
         table.where = where
         tableInfo.append(table)
         return table
@@ -139,7 +151,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         raise NoPrimaryTableException()
         return None
 
-def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, where = None):
+def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, where = None):
     """
     Stores the export settings for a table with a one-to-many relationship to the primary table.
     
@@ -166,7 +178,8 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.maxEntries = countMaxEntriesWithKeyColumn(table)
-        table.displayKeyColumn = table.maxEntries > 1
+        print(table.maxEntries)
+        table.displayKeyColumn = displayKeyColumn
         table.where = where
         tableInfo.append(table)
         return table
@@ -199,7 +212,7 @@ class Table:
         self.keyColumn = key
         self.parentTable = ref
         self.parentKeyColumn = refKey
-        self.displayKeyColumn = False
+        self.displayKeyColumn = True
         self.maxEntries = 1
         self.where = None
 
@@ -269,14 +282,14 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
         originalTable = table
     if count == 0:
         count += 1
-        return "select count(distinct {ta}.{c}) from {t} as {ta}".format(t = table.name, c = table.keyColumn.name, ta = countMaxEntriesWithKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count)
+        return "select count({ta}.{c}) from {t} as {ta}".format(t = table.name, c = table.keyColumn.name, ta = countKeyColumnAlias()) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count)
     elif (table == tableInfo[0] or table.parentTable == None):
-        return "group by {c} order by count({origta}.{origc}) limit 1".format(c = table.keyColumn.name, origta = countMaxEntriesWithKeyColumnAlias(), origc = orignalTable.keyColumn.name)
+        return " group by {c} order by count({origta}.{origc}) desc limit 1".format(c = table.keyColumn.name, origta = countKeyColumnAlias(), origc = originalTable.keyColumn.name)
     else:
         count += 1
-        return " inner join {ref} as {refa} on {ta}.{c} = {refa}.{cref}".format(ref = table.parentTable.name, c = table.keyColumn.name, cref = table.parentTable.keyColumn.name, refa = countMaxEntriesWithKeyColumnAlias(count), ta = countMaxEntriesWithKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable, count)
+        return " inner join {ref} as {refa} on {ta}.{c} = {refa}.{cref}".format(ref = table.parentTable.name, c = table.keyColumn.name, cref = table.parentTable.keyColumn.name, refa = countMaxEntriesWithKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count)
 
-def countMaxEntriesWithKeyColumnAlias(count = 0):
+def countKeyColumnAlias(count = 0):
     """
     Helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
     """
