@@ -164,7 +164,6 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         table.maxEntries = parentTable.maxEntries
         print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
-        table.where = where
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -203,7 +202,6 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         table.maxEntries = countMaxEntriesWithKeyColumn(table)
         print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
-        table.where = where
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
