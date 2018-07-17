@@ -61,12 +61,15 @@ def run():
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     """
+    print("Starting export...")
+    print("Counting entries...")
     query = "select count(*) from {t}"
     if not (tableInfo[0].where == None or tableInfo[0].where == ""):
         query += " where {w}"
     runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
     entries = cursor.fetchall()[0][0]
-    with open("export.csv", "w+", encoding = "utf-8") as file:
+    with open("export.csv", "w+") as file:
+        print("Writing columns...")
         # Write column names to top of csv
         for table in tableInfo:
             for i in range(table.maxEntries):
@@ -75,6 +78,7 @@ def run():
                         file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
         file.seek(file.tell() - 1)
         file.write("\n")
+        print("Writing entries...")
         bar = Bar("Entries Completed", max = entries)
         # Get list of keys for primary table
         query = "select {c} from {t}"
@@ -110,6 +114,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
     if keyColumnName == default:
         keyColumnName = columnNames[0]
+    print("Setting up primary table {t}...".format(t = tableName))
     columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
     keyColumn = getColumnFromName(keyColumnName, columns)
     table = Table(tableName, columns, keyColumn)
@@ -119,6 +124,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         tableInfo.append(table)
     else:
         tableInfo[0] = table
+    print("Primary table {t} added.".format(t = tableName))
     return table
 
 def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, where = None):
@@ -142,6 +148,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         parentTableName = tableInfo[0].table.name
     if parentKeyColumnName == default:
         parentKeyColumnName = keyColumnName
+    print("Setting up table {t}...".format(t = tableName))
     if not tableInfo[0] == None:
         columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
         keyColumn = getColumnFromName(keyColumnName, columns)
@@ -149,9 +156,11 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.maxEntries = parentTable.maxEntries
+        print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
         table.where = where
         tableInfo.append(table)
+        print("Table {t} added.".format(t = tableName))
         return table
     else:
         raise NoPrimaryTableException()
@@ -178,6 +187,7 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         parentTableName = tableInfo[0].table.name
     if parentKeyColumnName == default:
         parentKeyColumnName = keyColumnName
+    print("Setting up table {t}...".format(t = tableName))
     if not tableInfo[0] == None:
         columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
         keyColumn = getColumnFromName(keyColumnName, columns)
@@ -185,10 +195,11 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.maxEntries = countMaxEntriesWithKeyColumn(table)
-        print(table.maxEntries)
+        print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
         table.where = where
         tableInfo.append(table)
+        print("Table {t} added.".format(t = tableName))
         return table
     else:
         raise NoPrimaryTableException()
@@ -282,7 +293,7 @@ def entryTableExportDataQueryConstructor(table, primaryKey, count = 0):
     elif (table == tableInfo[0] or table.parentTable == None):
         return "{ta}.{c} = {value}".format(ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, value = "{quotes}{v}{quotes}".format(v = primaryKey, quotes = "," if table.keyColumn.type == "variable character" else ""))
     else:
-        return "exists(select 1 from {ref} as {refa} where {ta}.{c} = {refa}.{refc} and {q})".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, refc = table.parentTable.keyColumn.name, q = entryTableExportDataQueryConstructor(table.parentTable, primaryKey, count + 1))
+        return "exists(select 1 from {ref} as {refa} where {ta}.{c} = {refa}.{refc} and {q})".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, refc = table.parentKeyColumn.name, q = entryTableExportDataQueryConstructor(table.parentTable, primaryKey, count + 1))
 
 def countMaxEntriesWithKeyColumn(table):
     """
@@ -307,7 +318,7 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
     elif (table == tableInfo[0] or table.parentTable == None):
         return " group by {ta}.{c} order by count({origta}.{origc}) desc limit 1".format(ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, origta = countKeyColumnAlias(), origc = originalTable.keyColumn.name)
     else:
-        return " inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc}".format(ref = table.parentTable.name, c = table.keyColumn.name, refc = table.parentTable.keyColumn.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count + 1)
+        return "{w} inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc}".format(w = " where {q}".format(q = table.where) if not (table.where == "" or table.where == None) else "", ref = table.parentTable.name, c = table.keyColumn.name, refc = table.parentKeyColumn.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count + 1)
 
 def countKeyColumnAlias(count = 0):
     """
