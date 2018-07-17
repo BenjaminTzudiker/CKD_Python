@@ -105,7 +105,7 @@ def run():
             bar.next()
     bar.finish()
 
-def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, keyBuffer = True):
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
     """
     Stores the export settings for the primary table.
     
@@ -114,7 +114,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
     keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    keyBuffer -- Toggles storing key values in memory which may speed up the export process, boolean (default True)
+    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -172,7 +172,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         raise NoPrimaryTableException()
         return None
 
-def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, where = None):
+def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, keyBuffer = True):
     """
     Stores the export settings for a table with a one-to-many relationship to the primary table.
     
@@ -183,7 +183,7 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    keyBuffer -- Toggles storing key values in memory which may speed up the export process, boolean (default True)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -240,9 +240,6 @@ class Table:
         self.maxEntries = 1
         self.where = None
         self.keyBuffer = []
-    
-    def createKeyBuffer():
-        pass
 
 class NoPrimaryTableException(Exception):
     """
@@ -275,6 +272,15 @@ def getColumnFromName(name, collection):
     else:
         print("No column with name " + name + " found.")
         return None
+
+def createKeyBuffer(table):
+    pass
+
+def createKeyBufferQueryConstructor():
+    pass
+
+def entryTableExportData(table, primaryKey):
+    pass
 
 def entryTableExportNoBufferData(table, primaryKey):
     """
