@@ -75,7 +75,7 @@ def run():
             for i in range(table.maxEntries):
                 for column in table.columns:
                     if (not column == table.keyColumn) or (table.displayKeyColumn):
-                        file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
+                        file.write(column.displayName + (str(i) if table.maxEntries > 1 else "") + ",")
         file.seek(file.tell() - 1)
         file.write("\n")
         print("Writing entries...")
