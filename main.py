@@ -67,25 +67,31 @@ def run(mode):
     print("Starting export with mode \"{m}\"...".format(m = mode))
     print("Counting maximum entries for each table...")
     updateMaxEntries()
-    print("Writing columns...")
-    writeColumnHeaders()
     print("Querying primary table keys...")
     primaryKeys = queryPrimaryKeys()
     if mode == "prelist":
         with open("export.csv", "w+") as file:
+            print("Writing columns...")
+            writeColumnHeaders(file)
+            print("Creating lists...")
+            exportWidth = 0
+            for table in tableInfo:
+                exportWidth += table.maxEntries * (len(table.columns) - (0 if table.displayKeyColumn else 1))
+            tableData = {key:[None for j in range(exportWidth)] for key in primaryKeys}
+            entriesInRow = [0 for i in range(len(primaryKeys))]
             print("Querying tables...")
-            barQuery = Bar("Entries Completed", max = len(primaryKeys))
+            barQuery = Bar("Tables Queried", max = len(tableInfo))
             for table in tableInfo:
                 barQuery.next()
-                pass
+                
     elif mode == "slow":
         with open("export.csv", "w+") as file:
             print("Writing entries...")
-            bar = Bar("Entries Completed", max = len(primaryKeys))
+            bar = Bar("Row", max = len(primaryKeys))
             for primaryKey in primaryKeys:
                 bar.next()
                 for table in tableInfo:
-                    tableData = entryTableExportData(table, primaryKey[0])
+                    tableData = entryTableExportData(mode, table, primaryKey)
                     for entryData in tableData:
                         for data in entryData:
                             file.write(str(data) + ",")
@@ -122,7 +128,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Primary table {t} added.".format(t = tableName))
     return table
 
-def setupAddSecondary(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False):
+def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -151,6 +157,7 @@ def setupAddSecondary(tableName, columnNames = default, keyColumnName = default,
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.displayKeyColumn = displayKeyColumn
+        table.forceOneToOne = forceOneToOne
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -221,6 +228,7 @@ class Table:
         self.displayKeyColumn = True
         self.maxEntries = 1
         self.where = None
+        self.forceOneToOne = False
 
 class NoPrimaryTableException(Exception):
     """
@@ -257,19 +265,22 @@ def getColumnFromName(name, collection):
         print("No column with name " + name + " found.")
         return None
 
-def entryTableExportData(table, primaryKey):
+def entryTableExportData(mode, table, primaryKey):
     """
     Returns a list containing the entries for a table to be written to the exported csv file.
     
     Accepts the exported table as a table object and the primary key in the primary table. Returns a list of tuples (one tuple for each matching entry) if the query succeeds, or None if the query fails.
     """
-    success = runQuery(entryTableExportDataQueryConstructor(table, primaryKey))
+    if mode == "prelist":
+        pass
+    elif mode == "slow":
+        success = runQuery(entryTableExportDataSlowQueryConstructor(table, primaryKey))
     if success:
         return cursor.fetchall()
     else:
         return None
 
-def entryTableExportDataQueryConstructor(table, primaryKey, count = 0):
+def entryTableExportDataSlowQueryConstructor(table, primaryKey, count = 0):
     """
     Recursive helper function used to construct the query for entryTableExportData.
     """
@@ -280,11 +291,11 @@ def entryTableExportDataQueryConstructor(table, primaryKey, count = 0):
                 columns.remove(table.keyColumn)
             except:
                 print("Key column {c} not found in table {t}.".format(c = table.keyColumn.name, t = table.name))
-        return "select {c} from {t} as {ta} where {q}".format(t = table.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in columns), ta = countKeyColumnAlias(), q = entryTableExportDataQueryConstructor(table, primaryKey, count + 1))
+        return "select {c} from {t} as {ta} where {q}".format(t = table.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in columns), ta = countKeyColumnAlias(), q = entryTableExportDataSlowQueryConstructor(table, primaryKey, count + 1))
     elif (table == tableInfo[0] or table.parentTable == None):
         return "{ta}.{c} = {value}".format(ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, value = "{quotes}{v}{quotes}".format(v = primaryKey, quotes = "," if table.keyColumn.type == "variable character" else ""))
     else:
-        return "exists(select 1 from {ref} as {refa} where {ta}.{c} = {refa}.{refc} and {q})".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, refc = table.parentKeyColumn.name, q = entryTableExportDataQueryConstructor(table.parentTable, primaryKey, count + 1))
+        return "exists(select 1 from {ref} as {refa} where {ta}.{c} = {refa}.{refc} and {q})".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count), ta = countKeyColumnAlias(count - 1), c = table.keyColumn.name, refc = table.parentKeyColumn.name, q = entryTableExportDataSlowQueryConstructor(table.parentTable, primaryKey, count + 1))
 
 def countMaxEntriesWithKeyColumn(table):
     """
@@ -334,19 +345,19 @@ def getAllColumnNamesFromTableName(tableName):
 #
 
 def updateMaxEntries():
-    bar = ("Tables", len(tableInfo) - 1)
+    bar = Bar("Tables", max = len(tableInfo) - 1)
     for i in range(1, len(tableInfo)):
         if not tableInfo[i].forceOneToOne:
             bar.next()
             tableInfo[i].maxEntries = countMaxEntriesWithKeyColumn(tableInfo[i])
     for i in range(1, len(tableInfo)):
-        if not tableInfo[i].forceOneToOne:
+        if tableInfo[i].forceOneToOne:
             bar.next()
             tableInfo[i].maxEntries = tableInfo[i].parentTable.maxEntries
     bar.finish()
 
-def writeColumnHeaders():
-    bar = ("Tables", len(tableInfo) - 1)
+def writeColumnHeaders(file):
+    bar = Bar("Tables", max = len(tableInfo))
     for table in tableInfo:
         bar.next()
         for i in range(table.maxEntries):
