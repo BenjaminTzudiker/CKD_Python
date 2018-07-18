@@ -65,29 +65,23 @@ def run(mode):
     mode -- Tells the script how to behave: "slow" - Minimal RAM usage, may take longer, "prelist" - Higher RAM usage, might take less time
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
+    print("Counting maximum entries for each table...")
+    updateMaxEntries()
+    print("Writing columns...")
+    writeColumnHeaders()
+    print("Querying primary table keys...")
+    primaryKeys = queryPrimaryKeys()
     if mode == "prelist":
         with open("export.csv", "w+") as file:
+            print("Querying tables...")
+            barQuery = Bar("Entries Completed", max = len(primaryKeys))
+            for table in tableInfo:
+                barQuery.next()
+                pass
     elif mode == "slow":
         with open("export.csv", "w+") as file:
-            print("Counting maximum entries for each table...")
-            updateMaxEntriesWithDefaultQuery()
-            print("Writing columns...")
-            writeColumnHeaders()
-            print("Querying primary table keys...")
-            # Get list of keys for primary table
-            query = "select {c} from {t}"
-            if not (tableInfo[0].where == None or tableInfo[0].where == ""):
-                query += " where {w}"
-            runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
-            primaryKeys = cursor.fetchall()
-            print("Counting entries...")
-            query = "select count(*) from {t}"
-            if not (tableInfo[0].where == None or tableInfo[0].where == ""):
-                query += " where {w}"
-            runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
-            entries = cursor.fetchall()[0][0]
             print("Writing entries...")
-            bar = Bar("Entries Completed", max = entries)
+            bar = Bar("Entries Completed", max = len(primaryKeys))
             for primaryKey in primaryKeys:
                 bar.next()
                 for table in tableInfo:
@@ -234,6 +228,9 @@ class NoPrimaryTableException(Exception):
     """
     pass
 
+class PrimaryKeyFetchException(Exception):
+    pass
+
 def getTableFromName(name, collection = tableInfo):
     """
     Searches the collection for a table with the specified name.
@@ -336,7 +333,7 @@ def getAllColumnNamesFromTableName(tableName):
 # Run function helper methods
 #
 
-def updateMaxEntriesWithDefaultQuery():
+def updateMaxEntries():
     bar = ("Tables", len(tableInfo) - 1)
     for i in range(1, len(tableInfo)):
         if not tableInfo[i].forceOneToOne:
@@ -359,3 +356,24 @@ def writeColumnHeaders():
     file.seek(file.tell() - 1)
     file.write("\n")
     bar.finish()
+
+def queryPrimaryKeys():
+    query = "select {c} from {t}"
+    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+        query += " where {w}"
+    success = runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
+    if success:
+        primaryKeys = cursor.fetchall()
+        return [key[0] for key in primaryKeys]
+    else:
+        raise PrimaryKeyFetchException()
+
+def countPrimaryKeys():
+    query = "select count(*) from {t}"
+    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+        query += " where {w}"
+    runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
+    if success:
+        return cursor.fetchall()[0][0]
+    else:
+        raise PrimaryKeyFetchException()
