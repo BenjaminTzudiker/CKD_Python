@@ -54,50 +54,51 @@ def runQuery(query):
         return False
 
 #
-# Run.py setup functions
+# Run.py functions
 #
 
-def run():
+def run(mode):
     """
     Attempts to run the export using the inforamtion given in tableInfo.
+    
+    Keyword Arguments:
+    mode -- Tells the script how to behave: "slow" - Minimal RAM usage, may take longer, "prelist" - Higher RAM usage, might take less time
     """
-    print("Starting export...")
-    print("Counting entries...")
-    query = "select count(*) from {t}"
-    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
-        query += " where {w}"
-    runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
-    entries = cursor.fetchall()[0][0]
-    with open("export.csv", "w+") as file:
-        print("Writing columns...")
-        # Write column names to top of csv
-        for table in tableInfo:
-            for i in range(table.maxEntries):
-                for column in table.columns:
-                    if (not column == table.keyColumn) or (table.displayKeyColumn):
-                        file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
-        file.seek(file.tell() - 1)
-        file.write("\n")
-        print("Querying primary table keys...")
-        # Get list of keys for primary table
-        query = "select {c} from {t}"
-        if not (tableInfo[0].where == None or tableInfo[0].where == ""):
-            query += " where {w}"
-        runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
-        primaryKeys = cursor.fetchall()
-        print("Writing entries...")
-        bar = Bar("Entries Completed", max = entries)
-        for primaryKey in primaryKeys:
-            bar.next()
-            for table in tableInfo:
-                tableData = entryTableExportData(table, primaryKey[0])
-                for entryData in tableData:
-                    for data in entryData:
-                        file.write(str(data) + ",")
-                file.write("," * ((table.maxEntries - len(tableData)) * len(tableData[0])))
-            file.seek(file.tell() - 1)
-            file.write("\n")
-    bar.finish()
+    print("Starting export with mode \"{m}\"...".format(m = mode))
+    if mode == "prelist":
+        with open("export.csv", "w+") as file:
+    elif mode == "slow":
+        with open("export.csv", "w+") as file:
+            print("Counting maximum entries for each table...")
+            updateMaxEntriesWithDefaultQuery()
+            print("Writing columns...")
+            writeColumnHeaders()
+            print("Querying primary table keys...")
+            # Get list of keys for primary table
+            query = "select {c} from {t}"
+            if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+                query += " where {w}"
+            runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
+            primaryKeys = cursor.fetchall()
+            print("Counting entries...")
+            query = "select count(*) from {t}"
+            if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+                query += " where {w}"
+            runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
+            entries = cursor.fetchall()[0][0]
+            print("Writing entries...")
+            bar = Bar("Entries Completed", max = entries)
+            for primaryKey in primaryKeys:
+                bar.next()
+                for table in tableInfo:
+                    tableData = entryTableExportData(table, primaryKey[0])
+                    for entryData in tableData:
+                        for data in entryData:
+                            file.write(str(data) + ",")
+                    file.write("," * ((table.maxEntries - len(tableData)) * len(tableData[0])))
+                file.seek(file.tell() - 1)
+                file.write("\n")
+            bar.finish()
 
 def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
     """
@@ -127,7 +128,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Primary table {t} added.".format(t = tableName))
     return table
 
-def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True):
+def setupAddSecondary(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -138,6 +139,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
+    forceOneToOne -- If trie, this will set the maximum number of entries to be that of its parent table, boolean (default False)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -154,8 +156,6 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         parentTable = getTableFromName(parentTableName)
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-        table.maxEntries = parentTable.maxEntries
-        print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
@@ -164,7 +164,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         raise NoPrimaryTableException()
         return None
 
-def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True):
+'''def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True):
     """
     Stores the export settings for a table with a one-to-many relationship to the primary table.
     
@@ -191,15 +191,13 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         parentTable = getTableFromName(parentTableName)
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-        table.maxEntries = countMaxEntriesWithKeyColumn(table)
-        print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
     else:
         raise NoPrimaryTableException()
-        return None
+        return None'''
 
 #
 # Setup helpers
@@ -333,3 +331,31 @@ def getAllColumnNamesFromTableName(tableName):
         return cursor.fetchall()
     else:
         return tuple()
+
+#
+# Run function helper methods
+#
+
+def updateMaxEntriesWithDefaultQuery():
+    bar = ("Tables", len(tableInfo) - 1)
+    for i in range(1, len(tableInfo)):
+        if not tableInfo[i].forceOneToOne:
+            bar.next()
+            tableInfo[i].maxEntries = countMaxEntriesWithKeyColumn(tableInfo[i])
+    for i in range(1, len(tableInfo)):
+        if not tableInfo[i].forceOneToOne:
+            bar.next()
+            tableInfo[i].maxEntries = tableInfo[i].parentTable.maxEntries
+    bar.finish()
+
+def writeColumnHeaders():
+    bar = ("Tables", len(tableInfo) - 1)
+    for table in tableInfo:
+        bar.next()
+        for i in range(table.maxEntries):
+            for column in table.columns:
+                if (not column == table.keyColumn) or (table.displayKeyColumn):
+                    file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
+    file.seek(file.tell() - 1)
+    file.write("\n")
+    bar.finish()
