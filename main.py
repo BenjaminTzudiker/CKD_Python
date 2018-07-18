@@ -80,7 +80,7 @@ def run():
         file.write("\n")
         print("Writing entries...")
         bar = Bar("Entries Completed", max = entries)
-        for primaryKey in tableInfo[0].keyBuffer:
+        for primaryKey in list(tableInfo[0].keyBuffer.keys()):
             for table in tableInfo:
                 tableData = None
                 if table.keyBuffer == None:
@@ -88,7 +88,7 @@ def run():
                 elif len(table.keyBuffer) == 0:
                     tableData = entryTableExportNoBufferData(table, primaryKey[0])
                 else:
-                    pass
+                    tableData = entryTableExportNoBufferData(table, primaryKey[0])
                 for entryData in tableData:
                     for data in entryData:
                         file.write(str(data) + ",")
@@ -105,7 +105,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     Keyword arguments:
     tableName -- The name of the table, string
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
+    keyColumnName -- The name of the column used as the primary key for the table and should be unique, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
@@ -119,12 +119,9 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     table = Table(tableName, columns, keyColumn)
     table.displayKeyColumn = displayKeyColumn
     table.where = where
-    query = "select {c} from {t}"
-    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
-        query += " where {w}"
-    runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
-    primaryKeys = cursor.fetchall()
-    table.keyBuffer = tuple(key[0] for key in primaryKeys)
+    print("Creating primary key buffer...")
+    createPrimaryKeyBuffer(table)
+    print("Entries: {e}".format(e = len(table.keyBuffer.keys())))
     if len(tableInfo) == 0:
         tableInfo.append(table)
     else:
@@ -132,7 +129,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Primary table {t} added.".format(t = tableName))
     return table
 
-def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, keyBuffer = True):
+def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, keyBuffer = False):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -143,7 +140,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    keyBuffer -- Toggles storing key values in memory which may speed up the export process, boolean (default True)
+    keyBuffer -- Toggles storing key values in memory which may speed up the export process - should only be true when the column is unique and the extra memory used won't be a problem, boolean (default False)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -160,12 +157,12 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         parentTable = getTableFromName(parentTableName)
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-        table.maxEntries = parentTable.maxEntries
+        #table.maxEntries = parentTable.maxEntries
         print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
         if keyBuffer:
             print("Creating key buffer...")
-            createKeyBuffer(table)
+            createSecondaryKeyBuffer(table)
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -173,7 +170,7 @@ def setupAddOneToOneTable(tableName, columnNames = default, keyColumnName = defa
         raise NoPrimaryTableException()
         return None
 
-def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, keyBuffer = True):
+def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, keyBuffer = False):
     """
     Stores the export settings for a table with a one-to-many relationship to the primary table.
     
@@ -184,7 +181,7 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    keyBuffer -- Toggles storing key values in memory which may speed up the export process, boolean (default True)
+    keyBuffer -- Toggles storing key values in memory which may speed up the export process - should only be true when the column is unique and the extra memory used won't be a problem, boolean (default False)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -201,12 +198,12 @@ def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = def
         parentTable = getTableFromName(parentTableName)
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-        table.maxEntries = countMaxEntriesWithKeyColumn(table)
+        #table.maxEntries = countMaxEntriesWithKeyColumn(table)
         print("Maximum entries under table: {e}".format(e = table.maxEntries))
         table.displayKeyColumn = displayKeyColumn
         if keyBuffer:
             print("Creating key buffer...")
-            createKeyBuffer(table)
+            createSecondaryKeyBuffer(table)
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -242,11 +239,17 @@ class Table:
         self.displayKeyColumn = True
         self.maxEntries = 1
         self.where = None
-        self.keyBuffer = tuple()
+        self.keyBuffer = dict()
 
 class NoPrimaryTableException(Exception):
     """
     Custom exception thrown when secondary tables are added without a primary table.
+    """
+    pass
+
+class KeyBufferCreationException(Exception):
+    """
+    Custom exception thrown when key buffer creation fails.
     """
     pass
 
@@ -276,11 +279,39 @@ def getColumnFromName(name, collection):
         print("No column with name " + name + " found.")
         return None
 
-def createKeyBuffer(table):
-    pass
+def createPrimaryKeyBuffer(table):
+    query = "select {c} from {t}"
+    if not (table.where == None or table.where == ""):
+        query += " where {w}"
+    success = runQuery(query.format(c = table.keyColumn.name, t = table.name, w = table.where))
+    if success:
+        try:
+            primaryKeys = cursor.fetchall()
+            table.keyBuffer = {key[0]:key[0] for key in primaryKeys}
+        except:
+            raise KeyBufferCreationException()
+    else:
+        raise KeyBufferCreationException()
 
-def createKeyBufferQueryConstructor(table):
-    pass
+def createSecondaryKeyBuffer(table):
+    if table.parentTable.keyBuffer == None or table.parentTable.keyBuffer == dict():
+        raise KeyBufferCreationException("No key buffer found for parent table")
+        return False
+    table.keyBuffer = dict()
+    bar = Bar("Progress", max = len(tableInfo[0].keyBuffer.keys()))
+    query = "select {ta}.{c} from {t} as {ta} inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc} where {refa}.{refcref} in ({list})"
+    for primaryKey in list(table.parentTable.keyBuffer.keys()):
+        success = runQuery(query.format(t = table.name, ta = countKeyColumnAlias(0), c = table.keyColumn.name, ref = table.parentTable.name, refa = countKeyColumnAlias(1), refc = table.parentKeyColumn.name, refcref = table.parentTable.keyColumn.name, list = table.parentTable.keyBuffer[primaryKey]))
+        if success:
+            table.keyBuffer[primaryKey] = [key[0] for key in cursor.fetchall()]
+            bar.next()
+        else:
+            table.keyBuffer = dict()
+            bar.finish()
+            raise KeyBufferCreationException("Query exection failed")
+            return False
+    bar.finish()
+    return True
 
 def entryTableExportData(table, primaryKey):
     pass
