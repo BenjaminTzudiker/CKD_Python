@@ -5,7 +5,7 @@ from progress.bar import Bar
 # Default sentinel value for function default checking
 default = object()
 
-# Contains the Table instances used to store export information. tableInfo[0] contains the primary table.
+# Contains the Table instances used to store export information. tableInfo[0] contains the primary table. Order matters in some cases - child tables should always come after their parents!
 tableInfo = []
 
 #
@@ -57,12 +57,16 @@ def runQuery(query):
 # Run.py functions
 #
 
-def run(mode):
+def run(mode = "prelist"):
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     
     Keyword Arguments:
-    mode -- Tells the script how to behave: "slow" - Minimal RAM usage, may take longer, "prelist" - Higher RAM usage, might take less time
+    mode -- Tells the script how to behave, string (default "prelist")
+        "slow" - Performs many small queries. Likely to be noticeably slower than any of the other options, but uses minimal memory and requires no table creation priveleges.
+        "prelist" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
+        "temptable" - Creates export-specific temporary tables in the database instead of joining in python. Requires temporary table creation priveleges.
+        "permtable" - Creates and/or uses general permanent joined tables to speed up future similar operations. Requires table creation priveleges.
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
     print("Counting maximum entries for each table...")
@@ -73,19 +77,34 @@ def run(mode):
         with open("export.csv", "w+") as file:
             print("Writing columns...")
             writeColumnHeaders(file)
-            print("Creating lists...")
+            print("Creating dictionaries...")
             exportWidth = 0
             for table in tableInfo:
                 exportWidth += table.maxEntries * (len(table.columns) - (0 if table.displayKeyColumn else 1))
             tableData = {key:[None for j in range(exportWidth)] for key in primaryKeys}
+            keyDict = {table.parentTable:dict() for table in tableInfo if not (table.parentTable == None or table.parentTable == tableInfo[0])}
             entriesInRow = [0 for i in range(len(primaryKeys))]
+            tableDataStartingIndex = 0
             print("Querying tables...")
             barQuery = Bar("Tables Queried", max = len(tableInfo))
             for table in tableInfo:
                 barQuery.next()
-                
+                tableDataIndex = {key:tableDataStartingIndex for key in tableData.keys()}
+                tableDataStartingIndex += table.maxEntries * len(table.columns)
+                keyColumnIndex = table.columns.index(table.keyColumn)
+                if table == tableInfo[0]:
+                    entryData = entryTableExportData(mode, table, None)
+                elif table.parentTable == tableInfo[0]:
+                    entryData = entryTableExportData(mode, table, primaryKeys)
+                else:
+                    entryData = entryTableExportData(mode, table, keyDict[table.parentTable].keys())
+                for 
+                if table in keyDict.keys():
+                    pass
     elif mode == "slow":
         with open("export.csv", "w+") as file:
+            print("Writing columns...")
+            writeColumnHeaders(file)
             print("Writing entries...")
             bar = Bar("Row", max = len(primaryKeys))
             for primaryKey in primaryKeys:
@@ -107,7 +126,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     Keyword arguments:
     tableName -- The name of the table, string
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
+    keyColumnName -- The name of the unique column used as the primary key for the table, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
@@ -135,7 +154,7 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
     Keyword arguments:
     tableName -- The name of the table, string
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default columnNames[0])
+    keyColumnName -- The name of the column used to reference the parent table, string (default columnNames[0])
     parentTableName -- The name of the table that the key links to, string (default primary table name)
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
@@ -265,20 +284,26 @@ def getColumnFromName(name, collection):
         print("No column with name " + name + " found.")
         return None
 
-def entryTableExportData(mode, table, primaryKey):
+def entryTableExportData(mode, table, key):
     """
     Returns a list containing the entries for a table to be written to the exported csv file.
     
     Accepts the exported table as a table object and the primary key in the primary table. Returns a list of tuples (one tuple for each matching entry) if the query succeeds, or None if the query fails.
     """
     if mode == "prelist":
-        pass
+        success = runQuery(entryTableExportDataPrelistQueryConstructor(table, key))
     elif mode == "slow":
-        success = runQuery(entryTableExportDataSlowQueryConstructor(table, primaryKey))
+        success = runQuery(entryTableExportDataSlowQueryConstructor(table, key))
     if success:
         return cursor.fetchall()
     else:
         return None
+
+def entryTableExportDataPrelistQueryConstructor(table, keys):
+    if keys == None or table == tableInfo[0]:
+        return "select t1.{c} from {t} as t1{q}".format(c = ", ".join(column.name for column in table.columns), t = table.name, q = " {w".format(w = table.where) if not (table.where == "" or table.where == None) else "")
+    else:
+        return "select t1.{c} from {t} as t1 where exists (select 1 from values(({keys})) as t2 where t2.column1 = t1.{key})".format(c = ", ".join(column.name for column in table.columns), t = table.name, key = table.keyColumn.name, keys = "), (".join(keys))
 
 def entryTableExportDataSlowQueryConstructor(table, primaryKey, count = 0):
     """
@@ -363,7 +388,7 @@ def writeColumnHeaders(file):
         for i in range(table.maxEntries):
             for column in table.columns:
                 if (not column == table.keyColumn) or (table.displayKeyColumn):
-                    file.write(column.name + (str(i) if table.maxEntries > 1 else "") + ",")
+                    file.write(column.displayName + (str(i) if table.maxEntries > 1 else "") + ",")
     file.seek(file.tell() - 1)
     file.write("\n")
     bar.finish()
