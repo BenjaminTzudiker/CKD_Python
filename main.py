@@ -81,15 +81,14 @@ def run(mode = "prelist"):
             exportWidth = 0
             for table in tableInfo:
                 exportWidth += table.maxEntries * (len(table.columns) - (0 if table.displayKeyColumn else 1))
-            tableData = {key:[None for j in range(exportWidth)] for key in primaryKeys}
+            exportData = {key:[None for j in range(exportWidth)] for key in primaryKeys}
             keyDict = {table.parentTable:dict() for table in tableInfo if not (table.parentTable == None or table.parentTable == tableInfo[0])}
-            entriesInRow = [0 for i in range(len(primaryKeys))]
             tableDataStartingIndex = 0
             print("Querying tables...")
             barQuery = Bar("Tables Queried", max = len(tableInfo))
             for table in tableInfo:
                 barQuery.next()
-                tableDataIndex = {key:tableDataStartingIndex for key in tableData.keys()}
+                tableData = {key:tableDataStartingIndex for key in exportData.keys()}
                 tableDataStartingIndex += table.maxEntries * len(table.columns)
                 keyColumnIndex = table.columns.index(table.keyColumn)
                 if table == tableInfo[0]:
