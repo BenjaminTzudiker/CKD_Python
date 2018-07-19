@@ -9,51 +9,6 @@ default = object()
 tableInfo = []
 
 #
-# Main functions
-#
-
-def connect(dbuser, dbpass, dbname, dbhost):
-    """
-    Attempts to connect to the database.
-    
-    Accepts the username and password along with the host and database name (all as strings). Returns the cursor object if the connection succeeds, or attempts to exit the script (and returns None) if an exception is thrown.
-    """
-    try:
-        global conn
-        conn = psycopg2.connect("dbname='{name}' user='{user}' host='{host}' password='{password}'".format(user = dbuser, password = dbpass, name = dbname, host = dbhost))
-        global cursor
-        cursor = conn.cursor()
-        return cursor
-    except:
-        print("Database connection failed, check database information specified in run.py python file.")
-        print("Exiting...")
-        sys.exit()
-        return None
-
-# Attempts to close the connection to the database
-def close():
-    try:
-        global cursor
-        cursor.close()
-        global conn
-        conn.close()
-    except:
-        print("Failed to close database connection.")
-
-def runQuery(query):
-    """
-    Tries to run the query passed to the function.
-    
-    Accepts a string as the sql query (sans semicolon). Returns true if the query execution does not throw an exception, or false if an exception is thrown.
-    """
-    try:
-        cursor.execute("{q}".format(q = query))
-        return True
-    except Exception as e:
-        print("Query execution failed for query:\n" + query + "\n" + str(e))
-        return False
-
-#
 # Run.py functions
 #
 
@@ -65,8 +20,7 @@ def run(mode = "prelist"):
     mode -- Tells the script how to behave, string (default "prelist")
         "slow" - Performs many small queries. Likely to be noticeably slower than any of the other options, but uses minimal memory and requires no table creation priveleges.
         "prelist" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
-        "temptable" - Creates export-specific temporary tables in the database instead of joining in python. Requires temporary table creation priveleges.
-        "permtable" - Creates and/or uses general permanent joined tables to speed up future similar operations. Requires table creation priveleges.
+        "temptable" - Creates export-specific sorted temporary tables in the database instead of joining in python, then queries portions of those. Requires temporary table creation priveleges.
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
     print("Counting maximum entries for each table...")
@@ -183,43 +137,8 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         raise NoPrimaryTableException()
         return None
 
-'''def setupAddOneToManyTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True):
-    """
-    Stores the export settings for a table with a one-to-many relationship to the primary table.
-    
-    Keyword arguments:
-    tableName -- The name of the table, string
-    columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
-    keyColumnName -- The name of the column used as the primary key for the table, string (default first column name in columnNames)
-    parentTableName -- The name of the table that the key links to, string (default primary table name)
-    parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
-    displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    """
-    if columnNames == default:
-        columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
-    if keyColumnName == default:
-        keyColumnName = columnNames[0]
-    if parentTableName == default:
-        parentTableName = tableInfo[0].table.name
-    if parentKeyColumnName == default:
-        parentKeyColumnName = keyColumnName
-    print("Setting up table {t}...".format(t = tableName))
-    if not tableInfo[0] == None:
-        columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
-        keyColumn = getColumnFromName(keyColumnName, columns)
-        parentTable = getTableFromName(parentTableName)
-        parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
-        table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
-        table.displayKeyColumn = displayKeyColumn
-        tableInfo.append(table)
-        print("Table {t} added.".format(t = tableName))
-        return table
-    else:
-        raise NoPrimaryTableException()
-        return None'''
-
 #
-# Setup helpers
+# Classes
 #
 
 class Column:
@@ -248,6 +167,55 @@ class Table:
         self.where = None
         self.forceOneToOne = False
 
+#
+# Database functions
+#
+
+def connect(dbuser, dbpass, dbname, dbhost):
+    """
+    Attempts to connect to the database.
+    
+    Accepts the username and password along with the host and database name (all as strings). Returns the cursor object if the connection succeeds, or attempts to exit the script (and returns None) if an exception is thrown.
+    """
+    try:
+        global conn
+        conn = psycopg2.connect("dbname='{name}' user='{user}' host='{host}' password='{password}'".format(user = dbuser, password = dbpass, name = dbname, host = dbhost))
+        global cursor
+        cursor = conn.cursor()
+        return cursor
+    except:
+        print("Database connection failed, check database information specified in run.py python file.")
+        print("Exiting...")
+        sys.exit()
+        return None
+
+# Attempts to close the connection to the database
+def close():
+    try:
+        global cursor
+        cursor.close()
+        global conn
+        conn.close()
+    except:
+        print("Failed to close database connection.")
+
+def runQuery(query):
+    """
+    Tries to run the query passed to the function.
+    
+    Accepts a string as the sql query (sans semicolon). Returns true if the query execution does not throw an exception, or false if an exception is thrown.
+    """
+    try:
+        cursor.execute("{q}".format(q = query))
+        return True
+    except Exception as e:
+        print("Query execution failed for query:\n" + query + "\n" + str(e))
+        return False
+
+#
+# Custom exceptions
+#
+
 class NoPrimaryTableException(Exception):
     """
     Custom exception thrown when secondary tables are added without a primary table.
@@ -255,7 +223,14 @@ class NoPrimaryTableException(Exception):
     pass
 
 class PrimaryKeyFetchException(Exception):
+    """
+    Custom exception thrown when a query fails while trying to retrieve a collection of primary keys.
+    """
     pass
+
+#
+# Setup helpers
+#
 
 def getTableFromName(name, collection = tableInfo):
     """
