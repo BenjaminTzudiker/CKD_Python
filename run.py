@@ -21,7 +21,7 @@ setupAddSecondaryTable("diagnosis", keyColumnName = "encounter_id", parentTableN
 setupAddPrimaryTable("site_source", keyColumnName = "site_source")
 setupAddSecondaryTable("site_source_test", keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source")
 
-run(mode = "slow")
+run(mode = "buffered")
 
 # Closes the database connection
 close()

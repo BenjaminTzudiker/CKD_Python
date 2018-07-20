@@ -12,7 +12,7 @@ tableInfo = []
 # Run.py functions
 #
 
-def run(mode = "temptable", buffer = 1000):
+def run(mode = "buffered", buffer = 1000):
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     
@@ -20,33 +20,46 @@ def run(mode = "temptable", buffer = 1000):
     mode -- Tells the script how to behave, string (default "temptable")
         "slow" - Performs many small queries. Likely to be noticeably slower than any of the other options, but uses minimal memory and requires no table creation priveleges.
         "prelist" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
-        "temptable" - Creates export-specific sorted temporary tables in the database instead of joining in python, then queries portions of those. Requires temporary table creation priveleges.
+        "buffered" - Creates export-specific sorted temporary tables in the database instead of joining in python, then queries portions of those. Requires temporary table creation priveleges.
+    buffer -- Defines the size of each table's buffer for the \"buffered\" mode with no effect on other modes, int (default 1000)
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
-    if mode == "temptable":
+    print("Counting maximum entries for each table...")
+    updateMaxEntries()
+    print("Querying primary table keys...")
+    primaryKeys = queryPrimaryKeys()
+    if mode == "buffered":
         print("Setting up temporary tables and counting entries...")
-        bar = Bar("Table", max = len(tableInfo))
+        bar = Bar("Tables", max = len(tableInfo))
         for table in tableInfo:
             bar.next()
-            table.maxEntries = createJoinedTemporaryTable(table, tableInfo[0])
+            #table.maxEntries = createJoinedTemporaryTable(table, tableInfo[0])
+            createJoinedTemporaryTable(table, tableInfo[0])
         bar.finish()
-        with open("export.csv", "w+"):
+        with open("export.csv", "w+") as file:
             print("Writing columns...")
             writeColumnHeaders(file)
             print("Writing entries...")
-            buffer = {table:Buffer(table, buffer) for table in tableInfo}
-            nextEntry = {table:next(buffer[table]) for table in tableInfo}
-            bar = Bar("Row", max = tableInfo[0].maxEntries)
+            bufferList = {table:Buffer(table, buffer) for table in tableInfo}
+            nextEntry = {table:next(bufferList[table]) for table in tableInfo}
+            bar = Bar("Row", max = len(primaryKeys))
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
-                
+                primaryKey = nextEntry[tableInfo[0]][0]
+                for table in tableInfo:
+                    entryCount = 0
+                    while not nextEntry[table] == None and nextEntry[table][0] == primaryKey:
+                        entryCount += 1
+                        for i in range(1 if not table == tableInfo[0] else 0, len(nextEntry[table])):
+                            file.write(str(nextEntry[table][i]) + ",")
+                        nextEntry[table] = next(bufferList[table])
+                    file.write("," * ((table.maxEntries - entryCount) * len(table.columns)))
+                file.seek(file.tell() - 1)
+                file.write("\n")
+            bar.finish()
     else:
-        print("Counting maximum entries for each table...")
-        updateMaxEntries()
-        print("Querying primary table keys...")
-        primaryKeys = queryPrimaryKeys()
         if mode == "prelist":
-            with open("export.csv", "w+") as file:
+            """with open("export.csv", "w+") as file:
                 print("Writing columns...")
                 writeColumnHeaders(file)
                 print("Creating dictionaries...")
@@ -71,7 +84,7 @@ def run(mode = "temptable", buffer = 1000):
                         entryData = entryTableExportData(mode, table, keyDict[table.parentTable].keys())
                     for 
                     if table in keyDict.keys():
-                        pass
+                        pass"""
         elif mode == "slow":
             with open("export.csv", "w+") as file:
                 print("Writing columns...")
@@ -186,14 +199,22 @@ class Table:
         self.forceOneToOne = False
 
 def Buffer(table, size):
-    buffer = []
+    buffer = queryNextBuffer(table, size, 0)
     index = 0
+    offset = size
     while True:
         if index < len(buffer):
             index += 1
             yield buffer[index - 1]
         else:
             index = 0
+            buffer = queryNextBuffer(table, size, offset)
+            if len(buffer) > 0 and not buffer == None:
+                yield buffer[index]
+                offset += size
+            else:
+                break
+    yield None
             
 
 #
@@ -244,7 +265,7 @@ def runQuery(query):
         return False
 
 #
-# Helper functions
+# Setup helper functions
 #
 
 def getTableFromName(name, collection = tableInfo):
@@ -278,38 +299,6 @@ def countKeyColumnAlias(count = 0):
     Recursive helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
     """
     return "z" * (count + 1)
-
-def createJoinedTemporaryTable(table, primaryTable):
-    success = runQuery(createJoinedTemporaryTableQueryConstructor(table, parentTable))
-    if success:
-        success = runQuery("create unique index {index} on {table} ({column} asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table), column = "primary"))
-        if success:
-            success = runQuery("select count(primary) from {t}".format(t = temporaryTableName(table.name)))
-            if success:
-                return cursor.fetchall()[0][0]
-                return True
-            else:
-                print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table.name)))
-                return None
-        else:
-            print("Error creating index for temporary table {t}.".format(t = temporaryTableName(table.name)))
-            return None
-    else:
-        print("Error creating temporary table {t}.".format(t = temporaryTableName(table.name)))
-        return None
-
-def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
-    if table == primaryTable or table.parentTable == None:
-        return "select {pc} as primary, {c} into new temporary table {tempt} from {t} order by primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
-    elif count == 0:
-        return "select {pta}.{ptc} as primary, {c} into new temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQuery(table, primaryTable, count + 1), where = " " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
-    elif table.parentTable == primaryTable:
-        return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn, ptc = table.parentKeyColumn)
-    else:
-        return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn, refc = table.parentKeyColumn)
-
-def temporaryTableName(table):
-    return table.name + "_export_temp"
 
 def entryTableExportData(mode, table, key):
     """
@@ -389,6 +378,45 @@ def getAllColumnNamesFromTableName(tableName):
 #
 # Run function helper methods
 #
+
+def createJoinedTemporaryTable(table, primaryTable):
+    success = runQuery(createJoinedTemporaryTableQueryConstructor(table, primaryTable))
+    if success:
+        success = runQuery("create index {index} on {table} ({column} asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table), column = "export_primary"))
+        if success:
+            success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
+            if success:
+                return cursor.fetchall()[0][0]
+                return True
+            else:
+                print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table)))
+                return None
+        else:
+            print("Error creating index for temporary table {t}.".format(t = temporaryTableName(table)))
+            return None
+    else:
+        print("Error creating temporary table {t}.".format(t = temporaryTableName(table)))
+        return None
+
+def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
+    if table == primaryTable or table.parentTable == None:
+        return "select {pc} as export_primary, {c} into temporary table {tempt} from {t} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
+    elif count == 0:
+        return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+    elif table.parentTable == primaryTable:
+        return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn.name, ptc = table.parentKeyColumn.name)
+    else:
+        return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}{join}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn.name, refc = table.parentKeyColumn.name, join = createJoinedTemporaryTableQueryConstructor(table.parentTable, primaryTable, count + 1))
+
+def queryNextBuffer(table, size, offset):
+    success = runQuery("select * from {t} order by export_primary asc limit {s} offset {o}".format(t = temporaryTableName(table), s = size, o = offset))
+    if success:
+        return cursor.fetchall()
+    else:
+        return None
+
+def temporaryTableName(table):
+    return table.name + "_export_temp"
 
 def updateMaxEntries():
     bar = Bar("Tables", max = len(tableInfo) - 1)
