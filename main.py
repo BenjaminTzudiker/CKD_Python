@@ -12,65 +12,83 @@ tableInfo = []
 # Run.py functions
 #
 
-def run(mode = "prelist"):
+def run(mode = "temptable", buffer = 1000):
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     
     Keyword Arguments:
-    mode -- Tells the script how to behave, string (default "prelist")
+    mode -- Tells the script how to behave, string (default "temptable")
         "slow" - Performs many small queries. Likely to be noticeably slower than any of the other options, but uses minimal memory and requires no table creation priveleges.
         "prelist" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
         "temptable" - Creates export-specific sorted temporary tables in the database instead of joining in python, then queries portions of those. Requires temporary table creation priveleges.
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
-    print("Counting maximum entries for each table...")
-    updateMaxEntries()
-    print("Querying primary table keys...")
-    primaryKeys = queryPrimaryKeys()
-    if mode == "prelist":
-        with open("export.csv", "w+") as file:
-            print("Writing columns...")
-            writeColumnHeaders(file)
-            print("Creating dictionaries...")
-            exportWidth = 0
-            for table in tableInfo:
-                exportWidth += table.maxEntries * (len(table.columns) - (0 if table.displayKeyColumn else 1))
-            exportData = {key:[None for j in range(exportWidth)] for key in primaryKeys}
-            keyDict = {table.parentTable:dict() for table in tableInfo if not (table.parentTable == None or table.parentTable == tableInfo[0])}
-            tableDataStartingIndex = 0
-            print("Querying tables...")
-            barQuery = Bar("Tables Queried", max = len(tableInfo))
-            for table in tableInfo:
-                barQuery.next()
-                tableData = {key:tableDataStartingIndex for key in exportData.keys()}
-                tableDataStartingIndex += table.maxEntries * len(table.columns)
-                keyColumnIndex = table.columns.index(table.keyColumn)
-                if table == tableInfo[0]:
-                    entryData = entryTableExportData(mode, table, None)
-                elif table.parentTable == tableInfo[0]:
-                    entryData = entryTableExportData(mode, table, primaryKeys)
-                else:
-                    entryData = entryTableExportData(mode, table, keyDict[table.parentTable].keys())
-                for 
-                if table in keyDict.keys():
-                    pass
-    elif mode == "slow":
-        with open("export.csv", "w+") as file:
+    if mode == "temptable":
+        print("Setting up temporary tables and counting entries...")
+        bar = Bar("Table", max = len(tableInfo))
+        for table in tableInfo:
+            bar.next()
+            table.maxEntries = createJoinedTemporaryTable(table, tableInfo[0])
+        bar.finish()
+        with open("export.csv", "w+"):
             print("Writing columns...")
             writeColumnHeaders(file)
             print("Writing entries...")
-            bar = Bar("Row", max = len(primaryKeys))
-            for primaryKey in primaryKeys:
+            buffer = {table:Buffer(table, buffer) for table in tableInfo}
+            nextEntry = {table:next(buffer[table]) for table in tableInfo}
+            bar = Bar("Row", max = tableInfo[0].maxEntries)
+            while not nextEntry[tableInfo[0]] == None:
                 bar.next()
+                
+    else:
+        print("Counting maximum entries for each table...")
+        updateMaxEntries()
+        print("Querying primary table keys...")
+        primaryKeys = queryPrimaryKeys()
+        if mode == "prelist":
+            with open("export.csv", "w+") as file:
+                print("Writing columns...")
+                writeColumnHeaders(file)
+                print("Creating dictionaries...")
+                exportWidth = 0
                 for table in tableInfo:
-                    tableData = entryTableExportData(mode, table, primaryKey)
-                    for entryData in tableData:
-                        for data in entryData:
-                            file.write(str(data) + ",")
-                    file.write("," * ((table.maxEntries - len(tableData)) * len(tableData[0])))
-                file.seek(file.tell() - 1)
-                file.write("\n")
-            bar.finish()
+                    exportWidth += table.maxEntries * (len(table.columns) - (0 if table.displayKeyColumn else 1))
+                exportData = {key:[None for j in range(exportWidth)] for key in primaryKeys}
+                keyDict = {table.parentTable:dict() for table in tableInfo if not (table.parentTable == None or table.parentTable == tableInfo[0])}
+                tableDataStartingIndex = 0
+                print("Querying tables...")
+                barQuery = Bar("Tables Queried", max = len(tableInfo))
+                for table in tableInfo:
+                    barQuery.next()
+                    tableData = {key:tableDataStartingIndex for key in exportData.keys()}
+                    tableDataStartingIndex += table.maxEntries * len(table.columns)
+                    keyColumnIndex = table.columns.index(table.keyColumn)
+                    if table == tableInfo[0]:
+                        entryData = entryTableExportData(mode, table, None)
+                    elif table.parentTable == tableInfo[0]:
+                        entryData = entryTableExportData(mode, table, primaryKeys)
+                    else:
+                        entryData = entryTableExportData(mode, table, keyDict[table.parentTable].keys())
+                    for 
+                    if table in keyDict.keys():
+                        pass
+        elif mode == "slow":
+            with open("export.csv", "w+") as file:
+                print("Writing columns...")
+                writeColumnHeaders(file)
+                print("Writing entries...")
+                bar = Bar("Row", max = len(primaryKeys))
+                for primaryKey in primaryKeys:
+                    bar.next()
+                    for table in tableInfo:
+                        tableData = entryTableExportData(mode, table, primaryKey)
+                        for entryData in tableData:
+                            for data in entryData:
+                                file.write(str(data) + ",")
+                        file.write("," * ((table.maxEntries - len(tableData)) * len(tableData[0])))
+                    file.seek(file.tell() - 1)
+                    file.write("\n")
+                bar.finish()
 
 def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
     """
@@ -138,7 +156,7 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         return None
 
 #
-# Classes
+# Classes and generators
 #
 
 class Column:
@@ -167,6 +185,17 @@ class Table:
         self.where = None
         self.forceOneToOne = False
 
+def Buffer(table, size):
+    buffer = []
+    index = 0
+    while True:
+        if index < len(buffer):
+            index += 1
+            yield buffer[index - 1]
+        else:
+            index = 0
+            
+
 #
 # Database functions
 #
@@ -189,8 +218,10 @@ def connect(dbuser, dbpass, dbname, dbhost):
         sys.exit()
         return None
 
-# Attempts to close the connection to the database
 def close():
+    """
+    Attempts to close the connection to the database.
+    """
     try:
         global cursor
         cursor.close()
@@ -213,23 +244,7 @@ def runQuery(query):
         return False
 
 #
-# Custom exceptions
-#
-
-class NoPrimaryTableException(Exception):
-    """
-    Custom exception thrown when secondary tables are added without a primary table.
-    """
-    pass
-
-class PrimaryKeyFetchException(Exception):
-    """
-    Custom exception thrown when a query fails while trying to retrieve a collection of primary keys.
-    """
-    pass
-
-#
-# Setup helpers
+# Helper functions
 #
 
 def getTableFromName(name, collection = tableInfo):
@@ -257,6 +272,44 @@ def getColumnFromName(name, collection):
     else:
         print("No column with name " + name + " found.")
         return None
+
+def countKeyColumnAlias(count = 0):
+    """
+    Recursive helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
+    """
+    return "z" * (count + 1)
+
+def createJoinedTemporaryTable(table, primaryTable):
+    success = runQuery(createJoinedTemporaryTableQueryConstructor(table, parentTable))
+    if success:
+        success = runQuery("create unique index {index} on {table} ({column} asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table), column = "primary"))
+        if success:
+            success = runQuery("select count(primary) from {t}".format(t = temporaryTableName(table.name)))
+            if success:
+                return cursor.fetchall()[0][0]
+                return True
+            else:
+                print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table.name)))
+                return None
+        else:
+            print("Error creating index for temporary table {t}.".format(t = temporaryTableName(table.name)))
+            return None
+    else:
+        print("Error creating temporary table {t}.".format(t = temporaryTableName(table.name)))
+        return None
+
+def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
+    if table == primaryTable or table.parentTable == None:
+        return "select {pc} as primary, {c} into new temporary table {tempt} from {t} order by primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
+    elif count == 0:
+        return "select {pta}.{ptc} as primary, {c} into new temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQuery(table, primaryTable, count + 1), where = " " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+    elif table.parentTable == primaryTable:
+        return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn, ptc = table.parentKeyColumn)
+    else:
+        return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn, refc = table.parentKeyColumn)
+
+def temporaryTableName(table):
+    return table.name + "_export_temp"
 
 def entryTableExportData(mode, table, key):
     """
@@ -321,12 +374,6 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
     else:
         return "{w} inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc}".format(w = " where {q}".format(q = table.where) if not (table.where == "" or table.where == None) else "", ref = table.parentTable.name, c = table.keyColumn.name, refc = table.parentKeyColumn.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count + 1)
 
-def countKeyColumnAlias(count = 0):
-    """
-    Recursive helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
-    """
-    return "z" * (count + 1)
-
 def getAllColumnNamesFromTableName(tableName):
     """
     Returns a tuble containing all the column names and data types in a table.
@@ -387,3 +434,19 @@ def countPrimaryKeys():
         return cursor.fetchall()[0][0]
     else:
         raise PrimaryKeyFetchException()
+
+#
+# Custom exceptions
+#
+
+class NoPrimaryTableException(Exception):
+    """
+    Custom exception thrown when secondary tables are added without a primary table.
+    """
+    pass
+
+class PrimaryKeyFetchException(Exception):
+    """
+    Custom exception thrown when a query fails while trying to retrieve a collection of primary keys.
+    """
+    pass
