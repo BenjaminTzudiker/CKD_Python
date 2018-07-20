@@ -24,17 +24,26 @@ def run(mode = "buffered", buffer = 1000):
     buffer -- Defines the size of each table's buffer for the \"buffered\" mode with no effect on other modes, int (default 1000)
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
-    print("Counting maximum entries for each table...")
-    updateMaxEntries()
-    print("Querying primary table keys...")
-    primaryKeys = queryPrimaryKeys()
     if mode == "buffered":
-        print("Setting up temporary tables and counting entries...")
+        print("Setting up temporary tables...")
         bar = Bar("Tables", max = len(tableInfo))
         for table in tableInfo:
             bar.next()
             #table.maxEntries = createJoinedTemporaryTable(table, tableInfo[0])
             createJoinedTemporaryTable(table, tableInfo[0])
+        bar.finish()
+        print("Counting maximum entries for secondary tables...")
+        bar = Bar("Tables", max = len(tableInfo) - 1)
+        for i in range(1, len(tableInfo)):
+            if not tableInfo[i].forceOneToOne:
+                bar.next()
+                query = "select max(a.c) from (select count(z.{c}) as c from {t} as z group by z.c) as a".format(c = "export_primary", t = temporaryTableName(table))
+                runQuery(query)
+                tableInfo[i].maxEntries = cursor.fetchall()[0][0]
+        for i in range(1, len(tableInfo)):
+            if tableInfo[i].forceOneToOne:
+                bar.next()
+                tableInfo[i].maxEntries = tableInfo[i].parentTable.maxEntries
         bar.finish()
         with open("export.csv", "w+") as file:
             print("Writing columns...")
@@ -58,6 +67,10 @@ def run(mode = "buffered", buffer = 1000):
                 file.write("\n")
             bar.finish()
     else:
+        print("Counting maximum entries for each table...")
+        updateMaxEntries()
+        print("Querying primary table keys...")
+        primaryKeys = queryPrimaryKeys()
         if mode == "prelist":
             """with open("export.csv", "w+") as file:
                 print("Writing columns...")
@@ -402,7 +415,7 @@ def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
         return "select {pc} as export_primary, {c} into temporary table {tempt} from {t} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
     elif count == 0:
-        return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+        return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
     elif table.parentTable == primaryTable:
         return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn.name, ptc = table.parentKeyColumn.name)
     else:
