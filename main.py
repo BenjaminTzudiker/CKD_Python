@@ -392,6 +392,7 @@ def getAllColumnNamesFromTableName(tableName):
 #
 
 def createJoinedTemporaryTable(table, primaryTable):
+    print(createJoinedTemporaryTableQueryConstructor(table, primaryTable))
     success = runQuery(createJoinedTemporaryTableQueryConstructor(table, primaryTable))
     if success:
         success = runQuery("create index {index} on {table} ({column} asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table), column = "export_primary"))
@@ -412,9 +413,9 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {pc} as export_primary, {c} into table {tempt} from {t} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
+        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{where} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
     elif count == 0:
-        return "select {pta}.{ptc} as export_primary, {c} into table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+        return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
     elif table.parentTable == primaryTable:
         return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn.name, ptc = table.parentKeyColumn.name)
     else:
