@@ -58,7 +58,7 @@ def run(mode = "buffered", buffer = 1000):
                     entryCount = 0
                     while not nextEntry[table] == None and nextEntry[table][0] == primaryKey:
                         entryCount += 1
-                        for i in range(1 if not table == tableInfo[0] else 0, len(nextEntry[table])):
+                        for i in range(1, len(nextEntry[table])):
                             file.write(str(nextEntry[table][i]) + ",")
                         nextEntry[table] = next(bufferList[table])
                     file.write("," * ((table.maxEntries - entryCount) * len(table.columns)))
@@ -392,13 +392,13 @@ def getAllColumnNamesFromTableName(tableName):
 #
 
 def createJoinedTemporaryTable(table, primaryTable):
-    print(createJoinedTemporaryTableQueryConstructor(table, primaryTable))
     success = runQuery(createJoinedTemporaryTableQueryConstructor(table, primaryTable))
     if success:
         success = runQuery("create index {index} on {table} ({column} asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table), column = "export_primary"))
         if success:
             success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
             if success:
+                runQuery("analyze {t}".format(t = temporaryTableName(table)))
                 conn.commit()
                 return True
             else:
@@ -413,13 +413,15 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{where} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
-    elif count == 0:
+        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{where} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+    else:
+        return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name)
+    """elif count == 0:
         return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
     elif table.parentTable == primaryTable:
         return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn.name, ptc = table.parentKeyColumn.name)
     else:
-        return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}{join}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn.name, refc = table.parentKeyColumn.name, join = createJoinedTemporaryTableQueryConstructor(table.parentTable, primaryTable, count + 1))
+        return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}{join}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn.name, refc = table.parentKeyColumn.name, join = createJoinedTemporaryTableQueryConstructor(table.parentTable, primaryTable, count + 1))"""
 
 def queryNextBuffer(table, size, offset):
     success = runQuery("select * from {t} order by export_primary asc limit {s} offset {o}".format(t = temporaryTableName(table), s = size, o = offset))
