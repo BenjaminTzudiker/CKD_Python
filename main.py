@@ -29,7 +29,6 @@ def run(mode = "buffered", buffer = 1000):
         bar = Bar("Tables", max = len(tableInfo))
         for table in tableInfo:
             bar.next()
-            #table.maxEntries = createJoinedTemporaryTable(table, tableInfo[0])
             createJoinedTemporaryTable(table, tableInfo[0])
         bar.finish()
         print("Counting maximum entries for secondary tables...")
@@ -37,8 +36,7 @@ def run(mode = "buffered", buffer = 1000):
         for i in range(1, len(tableInfo)):
             if not tableInfo[i].forceOneToOne:
                 bar.next()
-                query = "select max(a.c) from (select count(z.{c}) as c from {t} as z group by z.c) as a".format(c = "export_primary", t = temporaryTableName(table))
-                runQuery(query)
+                runQuery("select max(a.c) from (select count(z.{c}) as c from {t} as z group by {c}) as a".format(c = "export_primary", t = temporaryTableName(table)))
                 tableInfo[i].maxEntries = cursor.fetchall()[0][0]
         for i in range(1, len(tableInfo)):
             if tableInfo[i].forceOneToOne:
@@ -51,7 +49,8 @@ def run(mode = "buffered", buffer = 1000):
             print("Writing entries...")
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
-            bar = Bar("Row", max = len(primaryKeys))
+            runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
+            bar = Bar("Row", max = cursor.fetchall()[0][0])
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
@@ -399,7 +398,7 @@ def createJoinedTemporaryTable(table, primaryTable):
         if success:
             success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
             if success:
-                return cursor.fetchall()[0][0]
+                conn.commit()
                 return True
             else:
                 print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table)))
@@ -413,9 +412,9 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {pc} as export_primary, {c} into temporary table {tempt} from {t} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
+        return "select {pc} as export_primary, {c} into table {tempt} from {t} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(column.name for column in table.columns if not column == table.keyColumn), tempt = temporaryTableName(table), t = table.name)
     elif count == 0:
-        return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+        return "select {pta}.{ptc} as export_primary, {c} into table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
     elif table.parentTable == primaryTable:
         return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn.name, ptc = table.parentKeyColumn.name)
     else:
