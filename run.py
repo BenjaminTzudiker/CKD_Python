@@ -17,6 +17,7 @@ primaryTableWhereStatement = "exists (select 1 from encounter e1 where z.patient
 setupAddPrimaryTable("patient", keyColumnName = "patient_id", where = primaryTableWhereStatement)
 setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableName = "patient", parentKeyColumnName = "patient_id")
 setupAddSecondaryTable("diagnosis", keyColumnName = "encounter_id", parentTableName = "encounter", parentKeyColumnName = "encounter_id")
+setupAddSecondaryTable("social_history", keyColumnName = "patient_id", parentTableName = "patient", parentKeyColumnName = "patient_id")
 
 """setupAddPrimaryTable("site_source", keyColumnName = "site_source")
 setupAddSecondaryTable("site_source_test", keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source")"""

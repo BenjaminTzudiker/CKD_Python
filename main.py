@@ -19,9 +19,9 @@ def run(mode = "buffered", buffer = 10000):
     Keyword Arguments:
     mode -- Tells the script how to behave, string (default "temptable")
         "slow" - Performs many small queries. Likely to be noticeably slower than any of the other options, but uses minimal memory and requires no table creation priveleges.
-        "prelist" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
+        "localjoin" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
         "buffered" - Creates export-specific sorted temporary tables in the database instead of joining in python, then queries portions of those. Requires temporary table creation priveleges.
-    buffer -- Defines the size of each table's buffer for the \"buffered\" mode with no effect on other modes, int (default 1000)
+    buffer -- Defines the size of each table's buffer for the \"buffered\" mode with no effect on other modes, int (default 10000)
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
     if mode == "buffered":
@@ -70,7 +70,7 @@ def run(mode = "buffered", buffer = 10000):
         updateMaxEntries()
         print("Querying primary table keys...")
         primaryKeys = queryPrimaryKeys()
-        if mode == "prelist":
+        if mode == "localjoin":
             """with open("export.csv", "w+") as file:
                 print("Writing columns...")
                 writeColumnHeaders(file)
@@ -318,8 +318,8 @@ def entryTableExportData(mode, table, key):
     
     Accepts the exported table as a table object and the primary key in the primary table. Returns a list of tuples (one tuple for each matching entry) if the query succeeds, or None if the query fails.
     """
-    if mode == "prelist":
-        success = runQuery(entryTableExportDataPrelistQueryConstructor(table, key))
+    if mode == "localjoin":
+        success = runQuery(entryTableExportDataLocaljoinQueryConstructor(table, key))
     elif mode == "slow":
         success = runQuery(entryTableExportDataSlowQueryConstructor(table, key))
     if success:
@@ -327,7 +327,7 @@ def entryTableExportData(mode, table, key):
     else:
         return None
 
-def entryTableExportDataPrelistQueryConstructor(table, keys):
+def entryTableExportDataLocaljoinQueryConstructor(table, keys):
     if keys == None or table == tableInfo[0]:
         return "select t1.{c} from {t} as t1{q}".format(c = ", ".join(column.name for column in table.columns), t = table.name, q = " {w".format(w = table.where) if not (table.where == "" or table.where == None) else "")
     else:
