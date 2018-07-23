@@ -61,7 +61,7 @@ def run(mode = "buffered", buffer = 10000):
                         for i in range(1, len(nextEntry[table])):
                             file.write(str(nextEntry[table][i]) + ",")
                         nextEntry[table] = next(bufferList[table])
-                    file.write("," * ((table.maxEntries - entryCount) * len(table.columns)))
+                    file.write("," * ((table.maxEntries - entryCount) * len([column for column in table.columns if column.include == 2])))
                 file.seek(file.tell() - 1)
                 file.write("\n")
             bar.finish()
@@ -115,7 +115,7 @@ def run(mode = "buffered", buffer = 10000):
                     file.write("\n")
                 bar.finish()
 
-def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, where = None):
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, whereInclude = None, whereMarkers = None):
     """
     Stores the export settings for the primary table.
     
@@ -124,18 +124,19 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
     keyColumnName -- The name of the unique column used as the primary key for the table, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    where -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    whereInclude -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
     if keyColumnName == default:
         keyColumnName = columnNames[0]
     print("Setting up primary table {t}...".format(t = tableName))
-    columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+    columns = [Column(col[0], col[0], col[1], 2 if col[0] in columnNames else 1 if col[0] == keyColumnName else 0) for col in getAllColumnNamesFromTableName(tableName)]
     keyColumn = getColumnFromName(keyColumnName, columns)
     table = Table(tableName, columns, keyColumn)
     table.displayKeyColumn = displayKeyColumn
-    table.where = where
+    table.whereInclude = whereInclude
+    table.whereMarkers = whereMarkers
     if len(tableInfo) == 0:
         tableInfo.append(table)
     else:
@@ -166,10 +167,12 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         parentKeyColumnName = keyColumnName
     print("Setting up table {t}...".format(t = tableName))
     if not tableInfo[0] == None:
-        columns = [Column(col[0], col[0], col[1]) for col in getAllColumnNamesFromTableName(tableName) if col[0] in columnNames]
+        columns = [Column(col[0], col[0], col[1], 2 if col[0] in columnNames else 1 if col[0] == keyColumnName else 0) for col in getAllColumnNamesFromTableName(tableName)]
         keyColumn = getColumnFromName(keyColumnName, columns)
         parentTable = getTableFromName(parentTableName)
         parentKeyColumn = getColumnFromName(parentKeyColumnName, parentTable.columns)
+        if parentKeyColumn.include == 0:
+            parentKeyColumn.include == 1
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.displayKeyColumn = displayKeyColumn
         table.forceOneToOne = forceOneToOne
@@ -187,13 +190,19 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
 class Column:
     """
     Stores information about a column that is needed to export it.
+    
+    name -- The SQL name of the column, string (default "")
+    displayName -- The name used in the exported CSV file, string (default name)
+    type -- The SQL column type, string (default "variable character")
+    include -- The extent to which the column should be included with 0 = not included, 1 = included in temp table but not exported, 2 = exported, int (default 2)
     """
-    def __init__(self, n = "", dispn = default, t = "variable character"):
+    def __init__(self, n = "", dispn = default, t = "variable character", inc = 2):
         if dispn == default:
             dispn = n
         self.name = n
         self.displayName = dispn
         self.type = t
+        self.include = inc
 
 class Table:
     """
@@ -207,10 +216,14 @@ class Table:
         self.parentKeyColumn = refKey
         self.displayKeyColumn = True
         self.maxEntries = 1
-        self.where = None
+        self.whereInclude = None
+        self.whereMarkers = []
         self.forceOneToOne = False
 
 def Buffer(table, size):
+    """
+    Generator function that 
+    """
     buffer = queryNextBuffer(table, size, 0)
     index = 0
     offset = size
@@ -303,7 +316,6 @@ def getColumnFromName(name, collection):
         if column.name == name:
             return column
     else:
-        print("No column with name " + name + " found.")
         return None
 
 def countKeyColumnAlias(count = 0):
@@ -329,7 +341,7 @@ def entryTableExportData(mode, table, key):
 
 def entryTableExportDataLocaljoinQueryConstructor(table, keys):
     if keys == None or table == tableInfo[0]:
-        return "select t1.{c} from {t} as t1{q}".format(c = ", ".join(column.name for column in table.columns), t = table.name, q = " {w".format(w = table.where) if not (table.where == "" or table.where == None) else "")
+        return "select t1.{c} from {t} as t1{q}".format(c = ", ".join(column.name for column in table.columns), t = table.name, q = " {w".format(w = table.whereInclude) if not (table.whereInclude == "" or table.whereInclude == None) else "")
     else:
         return "select t1.{c} from {t} as t1 where exists (select 1 from values(({keys})) as t2 where t2.column1 = t1.{key})".format(c = ", ".join(column.name for column in table.columns), t = table.name, key = table.keyColumn.name, keys = "), (".join(keys))
 
@@ -373,7 +385,7 @@ def countMaxEntriesWithKeyColumnQueryConstructor(table, originalTable = default,
     elif (table == tableInfo[0] or table.parentTable == None):
         return " group by {ta}.{c}) as {outera}".format(ta = countKeyColumnAlias(count), c = table.keyColumn.name, origta = countKeyColumnAlias(count + 1), origc = originalTable.keyColumn.name, outera = countKeyColumnAlias())
     else:
-        return "{w} inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc}".format(w = " where {q}".format(q = table.where) if not (table.where == "" or table.where == None) else "", ref = table.parentTable.name, c = table.keyColumn.name, refc = table.parentKeyColumn.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count + 1)
+        return "{w} inner join {ref} as {refa} on {ta}.{c} = {refa}.{refc}".format(w = " where {q}".format(q = table.whereInclude) if not (table.whereInclude == "" or table.whereInclude == None) else "", ref = table.parentTable.name, c = table.keyColumn.name, refc = table.parentKeyColumn.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count)) + countMaxEntriesWithKeyColumnQueryConstructor(table.parentTable, originalTable, count + 1)
 
 def getAllColumnNamesFromTableName(tableName):
     """
@@ -417,18 +429,12 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{where} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
+        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "")
     else:
-        return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name)
-    """elif count == 0:
-        return "select {pta}.{ptc} as export_primary, {c} into temporary table {tempt} from {t} as {ta} {join}{where} order by {pta}.{ptc} asc".format(pta = countKeyColumnAlias(), ptc = primaryTable.keyColumn.name, c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), join = createJoinedTemporaryTableQueryConstructor(table, primaryTable, count + 1), where = " where " + primaryTable.where if not (primaryTable.where == "" or primaryTable.where == None) else "")
-    elif table.parentTable == primaryTable:
-        return " inner join {pt} as {pta} on {ta}.{tc} = {pta}.{ptc}".format(pt = primaryTable.name, pta = countKeyColumnAlias(), ta= countKeyColumnAlias(count), tc = table.keyColumn.name, ptc = table.parentKeyColumn.name)
-    else:
-        return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}{join}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn.name, refc = table.parentKeyColumn.name, join = createJoinedTemporaryTableQueryConstructor(table.parentTable, primaryTable, count + 1))"""
+        return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name)
 
 def queryNextBuffer(table, size, offset):
-    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc limit {s}".format(c = ", ".join(column.name for column in table.columns), t = temporaryTableName(table), o = offset, s = size))
+    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc limit {s}".format(c = ", ".join(column.name for column in table.columns if column.include == 2), t = temporaryTableName(table), o = offset, s = size))
     if success:
         return cursor.fetchall()
     else:
@@ -455,7 +461,7 @@ def writeColumnHeaders(file):
         bar.next()
         for i in range(table.maxEntries):
             for column in table.columns:
-                if (not column == table.keyColumn) or (table.displayKeyColumn):
+                if column.include == 2:
                     file.write(column.displayName + (str(i) if table.maxEntries > 1 else "") + ",")
     file.seek(file.tell() - 1)
     file.write("\n")
@@ -463,9 +469,9 @@ def writeColumnHeaders(file):
 
 def queryPrimaryKeys():
     query = "select {c} from {t}"
-    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+    if not (tableInfo[0].whereInclude == None or tableInfo[0].whereInclude == ""):
         query += " where {w}"
-    success = runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].where))
+    success = runQuery(query.format(c = tableInfo[0].keyColumn.name, t = tableInfo[0].name, w = tableInfo[0].whereInclude))
     if success:
         primaryKeys = cursor.fetchall()
         return [key[0] for key in primaryKeys]
@@ -474,9 +480,9 @@ def queryPrimaryKeys():
 
 def countPrimaryKeys():
     query = "select count(*) from {t}"
-    if not (tableInfo[0].where == None or tableInfo[0].where == ""):
+    if not (tableInfo[0].whereInclude == None or tableInfo[0].whereInclude == ""):
         query += " where {w}"
-    runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].where))
+    runQuery(query.format(t = tableInfo[0].name, w = tableInfo[0].whereInclude))
     if success:
         return cursor.fetchall()[0][0]
     else:
