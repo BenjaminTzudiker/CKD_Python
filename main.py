@@ -12,7 +12,7 @@ tableInfo = []
 # Run.py functions
 #
 
-def run(mode = "buffered", buffer = 1000):
+def run(mode = "buffered", buffer = 10000):
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     
@@ -394,19 +394,23 @@ def getAllColumnNamesFromTableName(tableName):
 def createJoinedTemporaryTable(table, primaryTable):
     success = runQuery(createJoinedTemporaryTableQueryConstructor(table, primaryTable))
     if success:
-        success = runQuery("create index {index} on {table} ({column} asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table), column = "export_primary"))
+        success = runQuery("alter table {table} add column export_id serial primary key".format(table = temporaryTableName(table)))
         if success:
-            success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
+            success = runQuery("create index {index} on {table} (export_id, export_primary asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table)))
             if success:
-                runQuery("analyze {t}".format(t = temporaryTableName(table)))
-                conn.commit()
-                return True
+                success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
+                if success:
+                    runQuery("analyze {t}".format(t = temporaryTableName(table)))
+                    conn.commit()
+                    return True
+                else:
+                    print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table)))
+                    return None
             else:
-                print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table)))
+                print("Error creating indexes for temporary table {t}.".format(t = temporaryTableName(table)))
                 return None
         else:
-            print("Error creating index for temporary table {t}.".format(t = temporaryTableName(table)))
-            return None
+            print("Error creating primary key column for temporary table {t}.".format(t = temporaryTableName(table)))
     else:
         print("Error creating temporary table {t}.".format(t = temporaryTableName(table)))
         return None
@@ -424,7 +428,7 @@ def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
         return " inner join {ref} as {refa} on {ta}.{tc} = {refa}.{refc}{join}".format(ref = table.parentTable.name, refa = countKeyColumnAlias(count + 1), ta = countKeyColumnAlias(count), tc = table.keyColumn.name, refc = table.parentKeyColumn.name, join = createJoinedTemporaryTableQueryConstructor(table.parentTable, primaryTable, count + 1))"""
 
 def queryNextBuffer(table, size, offset):
-    success = runQuery("select * from {t} order by export_primary asc limit {s} offset {o}".format(t = temporaryTableName(table), s = size, o = offset))
+    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc limit {s}".format(c = ", ".join(column.name for column in table.columns), t = temporaryTableName(table), o = offset, s = size))
     if success:
         return cursor.fetchall()
     else:
