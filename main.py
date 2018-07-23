@@ -50,7 +50,7 @@ def run(mode = "buffered", buffer = 1000):
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
             runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
-            bar = Bar("Row", max = cursor.fetchall()[0][0])
+            bar = Bar("Rows  ", max = cursor.fetchall()[0][0])
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
