@@ -19,7 +19,7 @@ setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableNam
 setupAddSecondaryTable("diagnosis", keyColumnName = "encounter_id", parentTableName = "encounter", parentKeyColumnName = "encounter_id")"""
 
 setupAddPrimaryTable("site_source", columnNames = ["name"], keyColumnName = "site_source", whereMarkers = [("ss_check", "site_source = 1")])
-setupAddSecondaryTable("site_source_test", columnNames = ["num"], keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source")
+setupAddSecondaryTable("site_source_test", columnNames = ["num"], keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source", orderBy = [("num", True)])
 
 run(mode = "buffered")
 

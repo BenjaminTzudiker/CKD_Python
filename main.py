@@ -115,7 +115,7 @@ def run(mode = "buffered", buffer = 10000):
                     file.write("\n")
                 bar.finish()
 
-def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, whereInclude = None, whereMarkers = None):
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, orderBy = [], whereInclude = "", whereMarkers = []):
     """
     Stores the export settings for the primary table.
     
@@ -124,7 +124,9 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
     keyColumnName -- The name of the unique column used as the primary key for the table, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    whereInclude -- Optionally the statement in a where query used to limit the rows that are expored, string (default None)
+    orderBy -- Optionally provides additional ordering instructions, list of tuples (default [])
+    whereInclude -- Optionally the statement in a where query used to limit the rows that are expored, string (default "")
+    whereMarkers -- Optionally adds new columns that contain either one or zero for each row based on a where clause provided, list of tuples (default [])
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -137,6 +139,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         columns.append(Column("(case when " + marker[1] + " then 1 else 0 end) as " + marker[0], marker[0], "integer"))
     table = Table(tableName, columns, keyColumn)
     table.displayKeyColumn = displayKeyColumn
+    table.orderBy = orderBy
     table.whereInclude = whereInclude
     table.whereMarkers = whereMarkers
     if len(tableInfo) == 0:
@@ -146,7 +149,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Primary table {t} added.".format(t = tableName))
     return table
 
-def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False):
+def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False, orderBy = []):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -158,6 +161,7 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
     parentKeyColumnName -- The name of the column in the parent table that contains the foreign keys, string (default keyColumnName)
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     forceOneToOne -- If trie, this will set the maximum number of entries to be that of its parent table, boolean (default False)
+    orderBy -- Optionally provides additional ordering instructions, list of tuples (default [])
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -178,6 +182,7 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         table = Table(tableName, columns, keyColumn, parentTable, parentKeyColumn)
         table.displayKeyColumn = displayKeyColumn
         table.forceOneToOne = forceOneToOne
+        table.orderBy = orderBy
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -196,7 +201,7 @@ class Column:
     name -- The SQL name of the column, string (default "")
     displayName -- The name used in the exported CSV file, string (default name)
     type -- The SQL column type, string (default "variable character")
-    include -- The extent to which the column should be included with 0 = not included, 1 = included in temp table but not exported, 2 = exported, int (default 2)
+    include -- The extent to which the column should be included with 0 = not included, 1 = included in temp table but not exported, 2 = included and exported, int (default 2)
     """
     def __init__(self, n = "", dispn = default, t = "variable character", inc = 2):
         if dispn == default:
@@ -218,6 +223,7 @@ class Table:
         self.parentKeyColumn = refKey
         self.displayKeyColumn = True
         self.maxEntries = 1
+        self.orderBy = []
         self.whereInclude = None
         self.whereMarkers = []
         self.forceOneToOne = False
@@ -431,12 +437,12 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "")
+        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")
     else:
-        return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name)
+        return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc} order by export_Primary asc{order}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")
 
 def queryNextBuffer(table, size, offset):
-    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc limit {s}".format(c = ", ".join(column.name for column in table.columns if column.include == 2), t = temporaryTableName(table), o = offset, s = size))
+    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc{order} limit {s}".format(c = ", ".join(column.name for column in table.columns if column.include == 2), t = temporaryTableName(table), o = offset, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", s = size))
     if success:
         return cursor.fetchall()
     else:
