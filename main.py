@@ -133,6 +133,8 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Setting up primary table {t}...".format(t = tableName))
     columns = [Column(col[0], col[0], col[1], 2 if col[0] in columnNames else 1 if col[0] == keyColumnName else 0) for col in getAllColumnNamesFromTableName(tableName)]
     keyColumn = getColumnFromName(keyColumnName, columns)
+    for marker in whereMarkers:
+        columns.append(Column("(case when " + marker[1] + " then 1 else 0 end) as " + marker[0], marker[0], "integer"))
     table = Table(tableName, columns, keyColumn)
     table.displayKeyColumn = displayKeyColumn
     table.whereInclude = whereInclude
@@ -429,7 +431,7 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "")
+        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "")
     else:
         return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name)
 
