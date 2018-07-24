@@ -61,7 +61,25 @@ setupAddPrimaryTable("patient", keyColumnName = "patient_id", whereMarkers = [("
 
 #### Setting up the Secondary Tables
 
+Next you'll need to add all the secondary tables. Each of these tables has a "parent" table that informs the export script which row in the export to place each entry under. This parent table doesn't have to be the primary table, but every secondary table should be related to the primary table eventually. Every secondary table has a key column much like the primary table, but this key column is just used to join the table to its parent and doesn't have to be unique. For example, if you have the primary table patient and secondary table encounter where each encounter has a foreign key patient_id, the patient_id column would be the key column. A basic secondary table can be added like so:
 
+```python
+setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableName = "patient", parentKeyColumnName = "patient_id")
+```
+
+The table name and key column are defined like before. The name of the parent table and the column in the parent table that our key column references are then also defined. Columns can also be chosen in the same manner as with primary tables:
+
+```python
+setupAddSecondaryTable("encounter", keyColumnName = "patient_id", columnNames = ["encounter_id", "encounter_date", "department_id"] parentTableName = "patient", parentKeyColumnName = "patient_id")
+```
+
+If order matters, you can tell the export script to order the entries in an exported row using the orderBy argument. This takes a list of tuples, each tuple containing the column name as a string and a boolean value (True means ascending, False means descending). You can specify as many columns as you want by adding multiple tuples to the list, and tuples that come earlier in the list take priority over tuples that come later. We can use the following line of code if we want earlier encounters to be written further to the left in the export:
+
+```python
+setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableName = "patient", parentKeyColumnName = "patient_id", orderBy = [("encounter_date", True)])
+```
+
+Call the setAddSecondaryTable function once for each secondary table you'd like to add, making sure to add child tables after their parents (and by extension, the primary table before the secondary tables).
 
 ### Common Problems
 
@@ -75,23 +93,23 @@ This could be caused by lots of things, but it most likely has to do with
 
 ## File Descriptions
 
-./install.bat
+./install.bat 
 Batch script that attempts to install python dependencies.
 
-./install.sh
+./install.sh 
 Shell script that attempts to install python dependencies.
 
-./main.py
+./main.py 
 Backend python script that contains functions needed in run.py. Handles database communication and file writing among other things.
 
-./readme.md
+./readme.md 
 Markdown file that contains information on setting up and using the export scripts. It also contains this sentence.
 
-./run.bat
+./run.bat 
 Batch script that runs run.py.
 
-./run.py
+./run.py 
 Contains the information that describes how the export should take place, and calls the relevant functions in main.py.
 
-./run.sh
+./run.sh 
 Shell script that runs run.py.
