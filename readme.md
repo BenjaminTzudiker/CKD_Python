@@ -27,6 +27,8 @@ cursor = connect(dbuser, dbpass, dbname, dbhost)
 
 This will connect to the specified postgres database using the information you provide. If it can't connect to the database, it will exit - if this happens, double check that the information supplied is correct and that postgres is running.
 
+The dbuser and dbpass are the username and password for the database user you want to connect as - some export options require (temporary) table creation priveleges, so if you'd like to use them make sure you connect as a user that can perform those operations. The dbname is the name of the database you'd like to connect to. The dbhost will probably be localhost unless you're connecting to a database on a different computer.
+
 #### Setting up the Primary Table
 
 You now need to specify which tables you want to export. To begin, you will need a primary table, which should contain at least one unique identifier column. This is the table that all other tables are referenced based on, directly or indirectly. For the CKD database, this will often end up being the patient table, using the patient_id column as the unique identifier. Use the code below to set up a basic primary table:
@@ -51,7 +53,7 @@ setupAddPrimaryTable("patient", keyColumnName = "patient_id", whereInclude = "{a
 
 Note the use of {alias}. This will automatically get replaced with an alias (including the period separator) for the primary table to prevent any confusion with overlapping column names.
 
-If instead of excluding rows based on a where clause you'd rather just mark them, you can use the whereMarkers argument. Using this argument, you can tell the export script to make a whole new column and mark it with true or false. To use it, you need to pass in a list of tuples, with each tuple corresponding to one marker. The first value in the marker is what you'd like to call the column in the exported file, and the second value is the where clause much like in the example above. Rows that meet the where clause will have 1 in the created column, while those that don't will have 0. For example, if you wanted to instead mark all patients with an ID under 33500000:
+If instead of excluding rows based on a where clause you'd rather just mark them, you can use the whereMarkers argument. Using this argument, you can tell the export script to make a whole new column and mark it with true or false. To use it, you need to pass in a list of tuples, with each tuple corresponding to one marker. The first value in the marker is what you'd like to call the column in the exported file, and the second value is the where clause much like in the example above. Rows that meet the where clause will have 1 in the created column, while those that don't will have 0. For example, if you wanted to instead mark all patients with an ID under 3350000:
 
 ```python
 setupAddPrimaryTable("patient", keyColumnName = "patient_id", whereMarkers = [("is_under_id_max","{alias}patient_id < 3350000")])
