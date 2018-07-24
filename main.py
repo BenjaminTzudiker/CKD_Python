@@ -115,7 +115,7 @@ def run(mode = "buffered", buffer = 10000):
                     file.write("\n")
                 bar.finish()
 
-def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, orderBy = [], whereInclude = "", whereMarkers = []):
+def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = default, displayKeyColumn = True, whereInclude = "", whereMarkers = []):
     """
     Stores the export settings for the primary table.
     
@@ -124,7 +124,6 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     columnNames -- The names of the columns that should be imported, string[] (default all column names in table)
     keyColumnName -- The name of the unique column used as the primary key for the table, string (default columnNames[0])
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
-    orderBy -- Optionally provides additional ordering instructions, list of tuples (default [])
     whereInclude -- Optionally the statement in a where query used to limit the rows that are expored, string (default "")
     whereMarkers -- Optionally adds new columns that contain either one or zero for each row based on a where clause provided, list of tuples (default [])
     """
@@ -139,7 +138,6 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         columns.append(Column("(case when " + marker[1] + " then 1 else 0 end) as " + marker[0], marker[0], "integer"))
     table = Table(tableName, columns, keyColumn)
     table.displayKeyColumn = displayKeyColumn
-    table.orderBy = orderBy
     table.whereInclude = whereInclude
     table.whereMarkers = whereMarkers
     if len(tableInfo) == 0:
@@ -437,12 +435,12 @@ def createJoinedTemporaryTable(table, primaryTable):
 
 def createJoinedTemporaryTableQueryConstructor(table, primaryTable, count = 0):
     if table == primaryTable or table.parentTable == None:
-        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")
+        return "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude.format(alias = countKeyColumnAlias()) if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
     else:
         return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc} order by export_Primary asc{order}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")
 
 def queryNextBuffer(table, size, offset):
-    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc{order} limit {s}".format(c = ", ".join(column.name for column in table.columns if column.include == 2), t = temporaryTableName(table), o = offset, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", s = size))
+    success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc{order} limit {s}".format(c = ", ".join(column.name.format(alias = "") for column in table.columns if column.include == 2), t = temporaryTableName(table), o = offset, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", s = size))
     if success:
         return cursor.fetchall()
     else:
