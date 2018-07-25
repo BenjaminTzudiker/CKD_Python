@@ -5,6 +5,7 @@
     * Connecting to the Database
     * Setting up the Primary Table
     * Setting up the Secondary Tables
+    * Progress
   * Common Problems
 * File Descriptions
 
@@ -81,6 +82,28 @@ setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableNam
 
 Call the setAddSecondaryTable function once for each secondary table you'd like to add, making sure to add child tables after their parents (and by extension, the primary table before the secondary tables).
 
+#### Progress
+
+Large joins can unfortunately take a long time. Sadly, postgres doesn't have a good way to estimate the progress of a query. If it seems like a query might be stuck (in, say, the creating temp tables step) you can open up a postgres window and enter the following command:
+
+```sql
+select * from pg_stat_activity;
+```
+
+You can then try to find the query in question. The corresponding row should tell you when the query started, if it's still active, if it's waiting on a lock, etc. If you'd like to cancel a query, you can use the following command, looking at the pid column in the above query:
+
+```sql
+select pg_cancel_backend(<pid>);
+```
+
+Or, if the process won't quit and you'd like to force it to or you don't want to wait for postgres to do cleanup:
+
+```sql
+select pg_terminate_backend(<pid>);
+```
+
+The above is a "hard kill", and isn't generally reccomended.
+
 ### Common Problems
 
 #### Permission denied when trying to run shell script
@@ -89,7 +112,7 @@ Run the command `chmod a+x <path_to_shell>` to gain permission to run the script
 
 #### Query execution failed while running script
 
-This could be caused by lots of things, but it most likely has to do with 
+This could be caused by lots of things, but it most likely has to do with improperly defined tables in the setup.
 
 ## File Descriptions
 
