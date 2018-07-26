@@ -84,6 +84,16 @@ setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableNam
 
 Call the setAddSecondaryTable function once for each secondary table you'd like to add, making sure to add child tables after their parents (and by extension, the primary table before the secondary tables).
 
+#### Running the Export
+
+After the tables are set up, use the run function to start the export process like so:
+
+```python
+run(mode = "<mode>")
+```
+
+Mode can currently either be "slow" or "buffered". The slow mode will perform lots of small queries. This is quite inefficient, but it requires neither table creation priveleges nor much RAM. The buffered mode should be a lot faster, and is the reccommended export mode in most cases. It creates a sorted temporary table for each table defined in the export, then quickly queries batches from it whenever the buffer runs out. You can specify the buffer size (how many entries per table are queried at once) in the run function by adding the optional `buffer = <size>` argument.
+
 #### Progress
 
 Large joins can unfortunately take a long time. Sadly, postgres doesn't have a good way to estimate the progress of a query. If it seems like a query might be stuck (in, say, the creating temp tables step) you can open up a postgres window and enter the following command:
