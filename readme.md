@@ -96,7 +96,7 @@ You can then try to find the query in question. The corresponding row should tel
 select pg_cancel_backend(<pid>);
 ```
 
-Or, if the process won't quit and you'd like to force it to or you don't want to wait for postgres to do cleanup:
+If the process won't quit and you'd like to force it to or you don't want to wait for postgres to do cleanup:
 
 ```sql
 select pg_terminate_backend(<pid>);
