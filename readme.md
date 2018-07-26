@@ -11,6 +11,8 @@
 
 ## Python
 
+This repository contains scripts used to export parts of a database to a csv file in a manner more condusive to machine learning applications. Instead of having multiple tables or a jumbled mess of rows, this will place entries from multiple tables into a row corresponding to one primary table. The script works with many-to-one relationships and table relationships that don't directly link to the primary table. For example, in a medical database with patients, encounters, and diagnoses, the scripts could be set up to place all the information corresponding to an individual patient in one row. The scripts would still work even when there are multiple encounters/diagnoses for each patient or the diagnoses are linked to encounters instead of patients.
+
 ### Run.py
 
 #### Connecting to the Database
