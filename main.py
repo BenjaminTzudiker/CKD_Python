@@ -414,7 +414,7 @@ def createJoinedTemporaryTable(table, primaryTable):
     if success:
         success = runQuery("alter table {table} add column export_id serial primary key".format(table = temporaryTableName(table)))
         if success:
-            success = runQuery("create index {index} on {table} (export_id, export_primary asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table)))
+            success = runQuery("create index {index} on {table} (export_primary asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table)))
             if success:
                 success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
                 if success:
