@@ -1,6 +1,7 @@
 import psycopg2
 import sys
 from progress.bar import Bar
+from collections import deque
 
 # Default sentinel value for function default checking
 default = object()
@@ -27,7 +28,7 @@ def run(mode = "buffered", buffer = 10000):
     if mode == "buffered":
         print("Setting up temporary tables...")
         for table in tableInfo:
-            print("Creating temporary table for table {t}...".format(t = table.name))
+            print("Creating temporary table for{p} table {t}...".format(p = " primary" if table == tableInfo[0] else "",t = table.name))
             createJoinedTemporaryTable(table, tableInfo[0])
         print("Counting maximum entries for secondary tables...")
         bar = Bar("Tables        ", max = len(tableInfo) - 1)
@@ -226,6 +227,15 @@ class Table:
         self.whereMarkers = []
         self.forceOneToOne = False
         self.limit = 0
+
+class LargerDequeBar(Bar):
+        def __init__(self, *args, **kwargs):
+            super(LargerDequeBar, self).__init__(*args, **kwargs)
+            self._xput = deque(maxlen=2000)
+        def update_avg(self, n, dt):
+            if n > 0:
+                self._xput.append(dt / n)
+                self.avg = sum(self._xput) / len(self._xput)
 
 def Buffer(table, size):
     """
@@ -447,7 +457,7 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable):
     keys = [key for key in cursor.fetchall()]
     success = runQuery("select {refa}.export_primary, {c} into temporary table {tempt} from {t} as {ta} cross join {reft} as {refa} limit 0".format(refa = countKeyColumnAlias(0), c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), reft = temporaryTableName(table.parentTable))) and success
     success = runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table))) and success
-    bar = Bar("Parent Entries", max = len(keys))
+    bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s")
     for key in keys:
         if not success:
             break
