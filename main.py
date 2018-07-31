@@ -30,7 +30,7 @@ def run(mode = "buffered", buffer = 10000):
             print("Creating temporary table for table {t}...".format(t = table.name))
             createJoinedTemporaryTable(table, tableInfo[0])
         print("Counting maximum entries for secondary tables...")
-        bar = Bar("Tables", max = len(tableInfo) - 1)
+        bar = Bar("Tables        ", max = len(tableInfo) - 1)
         for i in range(1, len(tableInfo)):
             if not tableInfo[i].forceOneToOne:
                 bar.next()
@@ -48,7 +48,7 @@ def run(mode = "buffered", buffer = 10000):
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
             runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
-            bar = Bar("Rows  ", max = cursor.fetchall()[0][0])
+            bar = Bar("Rows          ", max = cursor.fetchall()[0][0])
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
@@ -438,7 +438,7 @@ def createJoinedTemporaryTable(table, primaryTable):
         return None
 
 def createPrimaryJoinedTemporaryTable(table, primaryTable):
-    query = "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude.format(alias = countKeyColumnAlias()) if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
+    query = "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
     return runQuery(query)
 
 def createSecondaryJoinedTemporaryTable(table, primaryTable):
@@ -485,7 +485,7 @@ def updateMaxEntries():
     bar.finish()
 
 def writeColumnHeaders(file):
-    bar = Bar("Tables", max = len(tableInfo))
+    bar = Bar("Tables        ", max = len(tableInfo))
     for table in tableInfo:
         bar.next()
         for i in range(table.maxEntries):
