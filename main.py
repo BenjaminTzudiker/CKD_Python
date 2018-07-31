@@ -291,7 +291,7 @@ def runQuery(query):
         cursor.execute("{q}".format(q = query))
         return True
     except Exception as e:
-        print("Query execution failed for query:\n" + query + "\n" + str(e))
+        print("\nQuery execution failed for query:\n" + query + "\n" + str(e))
         return False
 
 #
@@ -441,14 +441,16 @@ def createPrimaryJoinedTemporaryTable(table, primaryTable):
 
 def createSecondaryJoinedTemporaryTable(table, primaryTable):
     success = True
-    success = success and runQuery("select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else ""))
-    keys = [key for key in cursor.fetchOne()]
-    success = success and runQuery("select {refa}.export_primary, {c} into temporary table {tempt} from {t} as {ta} cross join {reft} as {refa} limit 0")
-    success = success and runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table)))
+    success = runQuery("select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table.parentTable), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")) and success
+    keys = [key for key in cursor.fetchall()]
+    success = runQuery("select {refa}.export_primary, {c} into temporary table {tempt} from {t} as {ta} cross join {reft} as {refa} limit 0".format(refa = countKeyColumnAlias(0), c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), reft = temporaryTableName(table.parentTable))) and success
+    success = runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table))) and success
     bar = Bar("Parent Entries", max = len(keys))
-    for key in primaryKeys if success:
+    for key in keys:
+        if not success:
+            break
         bar.next()
-        success = success and runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0] t = table.name, kc = table.parentKeyColum, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else ""))
+        success = runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}{limit}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0], t = table.name, kc = table.parentKeyColumn.name, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", limit = " limit " + table.limit if table.limit > 0 else "")) and success
     bar.finish()
     return success
 
