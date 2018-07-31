@@ -145,7 +145,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     print("Primary table {t} added.".format(t = tableName))
     return table
 
-def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False, orderBy = []):
+def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = default, parentTableName = default, parentKeyColumnName = default, displayKeyColumn = True, forceOneToOne = False, orderBy = [], limit = 0):
     """
     Stores the export settings for a table with a one-to-one relationship to the parent table.
     
@@ -158,6 +158,7 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
     displayKeyColumn -- If false, this will prevent the export from writing the table's key column, boolean (default True)
     forceOneToOne -- If trie, this will set the maximum number of entries to be that of its parent table, boolean (default False)
     orderBy -- Optionally provides additional ordering instructions, list of tuples (default [])
+    limit -- Limits the number of entries included for a specific parent key where 0 is no limit, integer (default 0)
     """
     if columnNames == default:
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
@@ -179,6 +180,7 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         table.displayKeyColumn = displayKeyColumn
         table.forceOneToOne = forceOneToOne
         table.orderBy = orderBy
+        table.limit = limit
         tableInfo.append(table)
         print("Table {t} added.".format(t = tableName))
         return table
@@ -450,7 +452,7 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable):
         if not success:
             break
         bar.next()
-        success = runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}{limit}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0], t = table.name, kc = table.parentKeyColumn.name, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", limit = " limit " + table.limit if table.limit > 0 else "")) and success
+        success = runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}{limit}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0], t = table.name, kc = table.parentKeyColumn.name, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", limit = " limit " + str(table.limit) if table.limit > 0 else "")) and success
     bar.finish()
     return success
 

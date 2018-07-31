@@ -24,7 +24,7 @@ setupAddSecondaryTable("diagnosis", keyColumnName = "encounter_id", parentTableN
 """
 
 setupAddPrimaryTable("site_source", columnNames = ["name"], keyColumnName = "site_source", whereMarkers = [("ss_check", "{alias}site_source = 1")])
-setupAddSecondaryTable("site_source_test", columnNames = ["num"], keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source", orderBy = [("num", True)])
+setupAddSecondaryTable("site_source_test", columnNames = ["num"], keyColumnName = "site_source", parentTableName = "site_source", parentKeyColumnName = "site_source", orderBy = [("num", True)], limit = 2)
 
 # Attempts to perform the export with the given table setup
 run(mode = "buffered")
