@@ -82,6 +82,14 @@ If order matters, you can tell the export script to order the entries in an expo
 setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableName = "patient", parentKeyColumnName = "patient_id", orderBy = [("encounter_date", True)])
 ```
 
+If you'd only like a certain number of results per parent item for a given table, you can use the "limit" argument. Say you only wanted 100 encounters for each patient to lower the space required for the export:
+
+```python
+setupAddSecondaryTable("encounter", keyColumnName = "patient_id", parentTableName = "patient", parentKeyColumnName = "patient_id", limit = 100)
+```
+
+Now, each patient will only have at most 100 encounters associated with it. This carries down to children of the limited table - for example, any diagnoses associated with encounters not included in the 100 won't be included either. Limit respects the orderBy argument - for example, if you sorted the encounters by date ascending, it would take the earliet 100 encounters.
+
 Call the setAddSecondaryTable function once for each secondary table you'd like to add, making sure to add child tables after their parents (and by extension, the primary table before the secondary tables).
 
 #### Running the Export
@@ -96,7 +104,7 @@ Mode can currently either be "slow" or "buffered". The slow mode will perform lo
 
 #### Progress
 
-Large joins can unfortunately take a long time. Sadly, postgres doesn't have a good way to estimate the progress of a query. If it seems like a query might be stuck (in, say, the creating temp tables step) you can open up a postgres window and enter the following command:
+Large joins can unfortunately take a long time. Sadly, postgres doesn't have a good way to estimate the progress of a query. If it seems like a query might be stuck (in, say, the creating temp tables step) and using `Ctrl+c` doesn't work, you can open up a postgres window and enter the following command:
 
 ```sql
 select * from pg_stat_activity;

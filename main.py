@@ -231,7 +231,7 @@ class Table:
 class LargerDequeBar(Bar):
         def __init__(self, *args, **kwargs):
             super(LargerDequeBar, self).__init__(*args, **kwargs)
-            self._xput = deque(maxlen=2000)
+            self._xput = deque(maxlen = 2000)
         def update_avg(self, n, dt):
             if n > 0:
                 self._xput.append(dt / n)
@@ -239,7 +239,7 @@ class LargerDequeBar(Bar):
 
 def Buffer(table, size):
     """
-    Generator function that 
+    Generator function that returns the next entry to write and queries the database to refill the buffer when needed
     """
     buffer = queryNextBuffer(table, size, 0)
     index = 0
