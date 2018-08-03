@@ -419,10 +419,19 @@ def getAllColumnNamesFromTableName(tableName):
 # Run function helper methods
 #
 
-def createJoinedTemporaryTable(table, primaryTable):
+def createJoinedTemporaryTable(table = default, primaryTable = default):
+    """
+    Creates a sorted temporary table for a database table that is used to speed up the export process.
+    
+    Takes the table that you want to make a temp table for and the primary table as table objects, both of which default to the first entry in the tableInfo list.
+    """
+    if table == default:
+        table = tableInfo[0]
+    if primaryTable = default:
+        primaryTable = tableInfo[0]
     print("Creating temporary table for{p} table {t}...".format(p = " primary" if table == tableInfo[0] else "",t = table.name))
     if table == primaryTable or table.parentTable == None:
-        success = createPrimaryJoinedTemporaryTable(table, primaryTable)
+        success = createPrimaryJoinedTemporaryTable(table)
         if success:
             success = runQuery("alter table {table} add column export_id serial primary key".format(table = temporaryTableName(table)))
         else:
@@ -450,17 +459,32 @@ def createJoinedTemporaryTable(table, primaryTable):
         print("Error creating temporary table {t}.".format(t = temporaryTableName(table)))
         return None
 
-def createPrimaryJoinedTemporaryTable(table, primaryTable):
-    query = "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + primaryTable.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (primaryTable.whereInclude == "" or primaryTable.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
+def createPrimaryJoinedTemporaryTable(table = default):
+    """
+    Sets up and then loads data into a new temporary table used later in the export process.
+    
+    Loads the primary table with a single query, filtering out/adding marker columns for included where statements. Takes the primary table as a table object, defaulting to the first table in the tableInfo list.
+    """
+    if table == default:
+        table = tableInfo[0]
+    query = "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + table.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (table.whereInclude == "" or table.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
     return runQuery(query)
 
-def createSecondaryJoinedTemporaryTable(table, primaryTable):
+def createSecondaryJoinedTemporaryTable(table, primaryTable = default):
+    """
+    Sets up and then loads data into a new temporary table used later in the export process.
+    
+    Builds the table and runs one query for each parent key, keeping track of progress and limiting entries/ordering as needed. Takes the secondary table to load and the primary table as table objects, defaulting the primary table to the first table in the tableInfo list.
+    """
+    if primaryTable == default:
+        primaryTable = tableInfo[0]
     success = True
+    print("Setting up table structure...")
     success = runQuery("select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table.parentTable), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")) and success
     keys = [key for key in cursor.fetchall()]
     success = runQuery("select {refa}.export_primary, {c} into temporary table {tempt} from {t} as {ta} cross join {reft} as {refa} limit 0".format(refa = countKeyColumnAlias(0), c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), reft = temporaryTableName(table.parentTable))) and success
     success = runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table))) and success
-    bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s")
+    bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s   ")
     for key in keys:
         if not success:
             break
@@ -476,6 +500,11 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable):
         return "select {refa}.export_primary as export_primary, {c} into temporary table {tempt} from {t} as {ta} inner join {reft} as {refa} on {ta}.{kc} = {refa}.{refkc} order by export_primary asc{order}".format(refa = countKeyColumnAlias(1), c = ", ".join(countKeyColumnAlias() + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), reft = temporaryTableName(table.parentTable), kc = table.keyColumn.name, refkc = table.parentKeyColumn.name, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")"""
 
 def queryNextBuffer(table, size, offset):
+    """
+    Queries the database for the next batch of the temporary table.
+    
+    Takes the table object that corresponds to the temporary table, the size of the batch, and the starting position of the batch. Returns a list of tuples, with one tuple corresponding to one row.
+    """
     success = runQuery("select export_primary, {c} from {t} where export_id >= {o} order by export_primary asc{order} limit {s}".format(c = ", ".join(column.name.format(alias = "") for column in table.columns if column.include == 2), t = temporaryTableName(table), o = offset, order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", s = size))
     if success:
         return cursor.fetchall()
@@ -483,9 +512,15 @@ def queryNextBuffer(table, size, offset):
         return None
 
 def temporaryTableName(table):
+    """
+    Takes a table object and returns the name of the corresponding temporary table as a string.
+    """
     return table.name + "_export_temp"
 
 def updateMaxEntries():
+    """
+    Updates the maxEntries variable for each table in the tableInfo list.
+    """
     bar = Bar("Tables", max = len(tableInfo) - 1)
     for i in range(1, len(tableInfo)):
         if not tableInfo[i].forceOneToOne:
@@ -498,6 +533,9 @@ def updateMaxEntries():
     bar.finish()
 
 def writeColumnHeaders(file):
+    """
+    Writes the column headers to the export csv file.
+    """
     bar = Bar("Tables        ", max = len(tableInfo))
     for table in tableInfo:
         bar.next()
@@ -510,6 +548,9 @@ def writeColumnHeaders(file):
     bar.finish()
 
 def queryPrimaryKeys():
+    """
+    Returns a list of all the keys for the primary table.
+    """
     query = "select {c} from {t}"
     if not (tableInfo[0].whereInclude == None or tableInfo[0].whereInclude == ""):
         query += " where {w}"
@@ -521,6 +562,9 @@ def queryPrimaryKeys():
         raise PrimaryKeyFetchException()
 
 def countPrimaryKeys():
+    """
+    Counts the total number of included primary keys for the primary table."
+    """
     query = "select count(*) from {t}"
     if not (tableInfo[0].whereInclude == None or tableInfo[0].whereInclude == ""):
         query += " where {w}"
