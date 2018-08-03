@@ -433,6 +433,7 @@ def createJoinedTemporaryTable(table = default, primaryTable = default):
     if table == primaryTable or table.parentTable == None:
         success = createPrimaryJoinedTemporaryTable(table)
         if success:
+            print("Adding unique identifier column...")
             success = runQuery("alter table {table} add column export_id serial primary key".format(table = temporaryTableName(table)))
         else:
             print("Error creating primary key column for temporary table {t}.".format(t = temporaryTableName(table)))
@@ -470,26 +471,38 @@ def createPrimaryJoinedTemporaryTable(table = default):
     query = "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + table.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (table.whereInclude == "" or table.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
     return runQuery(query)
 
-def createSecondaryJoinedTemporaryTable(table, primaryTable = default):
+def createSecondaryJoinedTemporaryTable(table, primaryTable = default, fetchSize = 10000):
     """
     Sets up and then loads data into a new temporary table used later in the export process.
     
-    Builds the table and runs one query for each parent key, keeping track of progress and limiting entries/ordering as needed. Takes the secondary table to load and the primary table as table objects, defaulting the primary table to the first table in the tableInfo list.
+    Builds the table and runs one query for each parent key, keeping track of progress and limiting entries/ordering as needed. Takes the secondary table to load and the primary table as table objects, defaulting the primary table to the first table in the tableInfo list. Also takes the cursor fetch size as an int, defaulting to 10000.
     """
     if primaryTable == default:
         primaryTable = tableInfo[0]
     success = True
     print("Setting up table structure...")
-    success = runQuery("select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table.parentTable), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")) and success
-    keys = [key for key in cursor.fetchall()]
     success = runQuery("select {refa}.export_primary, {c} into temporary table {tempt} from {t} as {ta} cross join {reft} as {refa} limit 0".format(refa = countKeyColumnAlias(0), c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), reft = temporaryTableName(table.parentTable))) and success
+    print("Adding unique identifier column...")
     success = runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table))) and success
-    bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s   ")
-    for key in keys:
-        if not success:
-            break
-        bar.next()
-        success = runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}{limit}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0], t = table.name, kc = table.parentKeyColumn.name, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", limit = " limit " + str(table.limit) if table.limit > 0 else "")) and success
+    print("Counting keys...")
+    success = runQuery("select count(*) from {t}".format(t = temporaryTableName(table)))
+    maxlen = cursor.fetchall()[0][0]
+    print("Declaring cursor...")
+    success = runQuery("declare cursor_export_keys_{t} cursor for select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table.parentTable), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")) and success
+    print("Fetching initial entries from cursor...")
+    success = runQuery("fetch forward {s} from cursor_export_keys_{t}".format(s = fetchSize, t = temporaryTableName(table.parentTable))) and success
+    keys = cursor.fetchall()
+    print("Filling table...")
+    bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s     ")
+    while not len(keys) == 0
+        for key in keys:
+            if not success:
+                print("Previous query execution failed, halting...")
+                break
+            bar.next()
+            success = runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}{limit}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0], t = table.name, kc = table.parentKeyColumn.name, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", limit = " limit " + str(table.limit) if table.limit > 0 else "")) and success
+        success = runQuery("fetch forward {s} from cursor_export_keys_{t}".format(s = fetchSize, t = temporaryTableName(table.parentTable))) and success
+        keys = cursor.fetchall()
     bar.finish()
     return success
 
