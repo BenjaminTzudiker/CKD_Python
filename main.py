@@ -48,7 +48,7 @@ def run(mode = "buffered", buffer = 10000):
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
             runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
-            bar = Bar("Rows          ", max = cursor.fetchall()[0][0])
+            bar = LargerDequeBar("Rows          ", max = cursor.fetchall()[0][0], suffix = "%(index)d/%(max)d - ETA: %(eta_td)s     ")
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
@@ -63,6 +63,7 @@ def run(mode = "buffered", buffer = 10000):
                 file.seek(file.tell() - 1)
                 file.write("\n")
             bar.finish()
+            print("Export to file export.csv completed, exiting.")
     else:
         print("Counting maximum entries for each table...")
         updateMaxEntries()
@@ -427,7 +428,7 @@ def createJoinedTemporaryTable(table = default, primaryTable = default):
     """
     if table == default:
         table = tableInfo[0]
-    if primaryTable = default:
+    if primaryTable == default:
         primaryTable = tableInfo[0]
     print("Creating temporary table for{p} table {t}...".format(p = " primary" if table == tableInfo[0] else "",t = table.name))
     if table == primaryTable or table.parentTable == None:
@@ -494,7 +495,7 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable = default, fetchSize
     keys = cursor.fetchall()
     print("Filling table...")
     bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s     ")
-    while not len(keys) == 0
+    while not len(keys) == 0:
         for key in keys:
             if not success:
                 print("Previous query execution failed, halting...")
