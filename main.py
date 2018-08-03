@@ -13,7 +13,7 @@ tableInfo = []
 # Run.py functions
 #
 
-def run(mode = "buffered", buffer = 10000):
+def run(mode = "buffered", filename = "export.csv", buffer = 10000):
     """
     Attempts to run the export using the inforamtion given in tableInfo.
     
@@ -22,6 +22,7 @@ def run(mode = "buffered", buffer = 10000):
         "slow" - Performs many small queries. Likely to be noticeably slower than any of the other options, but uses minimal memory and requires no table creation priveleges.
         "localjoin" - Queries whole tables and joins/builds the export before writing the file. Uses a lot more memory than "slow", but it should take less time and still requires no table creation priveleges.
         "buffered" - Creates export-specific sorted temporary tables in the database instead of joining in python, then queries portions of those. Requires temporary table creation priveleges.
+    filename -- String value that denotes the name of the file the export will write to, string (default "export.csv")
     buffer -- Defines the size of each table's buffer for the \"buffered\" mode with no effect on other modes, int (default 10000)
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
@@ -41,7 +42,7 @@ def run(mode = "buffered", buffer = 10000):
                 bar.next()
                 tableInfo[i].maxEntries = tableInfo[i].parentTable.maxEntries
         bar.finish()
-        with open("export.csv", "w+") as file:
+        with open(filename, "w+") as file:
             print("Writing columns...")
             writeColumnHeaders(file)
             print("Writing entries...")
@@ -63,14 +64,14 @@ def run(mode = "buffered", buffer = 10000):
                 file.seek(file.tell() - 1)
                 file.write("\n")
             bar.finish()
-            print("Export to file export.csv completed, exiting.")
+            print("Export to file {f} completed, exiting.".format(f = filename))
     else:
         print("Counting maximum entries for each table...")
         updateMaxEntries()
         print("Querying primary table keys...")
         primaryKeys = queryPrimaryKeys()
         if mode == "localjoin":
-            """with open("export.csv", "w+") as file:
+            """with open(filename, "w+") as file:
                 print("Writing columns...")
                 writeColumnHeaders(file)
                 print("Creating dictionaries...")
