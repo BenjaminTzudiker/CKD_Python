@@ -8,6 +8,8 @@
     * Connecting to the Database
     * Setting up the Primary Table
     * Setting up the Secondary Tables
+    * Running the Export
+    * Running Custom Queries
     * Progress
   * Common Problems
 * File Descriptions
@@ -121,6 +123,22 @@ run(mode = "<mode>")
 ```
 
 Mode can currently either be "slow" or "buffered". The slow mode will perform lots of small queries. This is quite inefficient, but it requires neither table creation priveleges nor much RAM. The buffered mode should be a lot faster, and is the reccommended export mode in most cases. It creates a sorted temporary table for each table defined in the export, then quickly queries batches from it whenever the buffer runs out. You can specify the buffer size (how many entries per table are queried at once) in the run function by adding the optional `buffer = <size>` argument.
+
+#### Running Custom Queries
+
+You can also manually run your own queries using the following command:
+
+```python
+runQuery("select * from example_table")
+```
+
+The above function will return a boolean value corresponding to the query's success.
+
+You can then get the results of your query (if applicable) by using the cursor object returned by the connect function. This object will return a list of tuples, with each tuple containing the queried information for one row.
+
+```
+resultList = cursor.fetchall()
+```
 
 #### Progress
 
