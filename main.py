@@ -49,7 +49,7 @@ def run(mode = "buffered", filename = "export.csv", buffer = 10000):
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
             runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
-            bar = LargerDequeBar("Rows          ", max = cursor.fetchall()[0][0], suffix = "%(index)d/%(max)d - ETA: %(eta_td)s     ")
+            bar = LargerDequeBar("Rows          ", max = cursor.fetchall()[0][0], suffix = "%(index)d/%(max)d - ETA: %(eta_td)s        ")
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
@@ -487,7 +487,7 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable = default, fetchSize
     print("Adding unique identifier column...")
     success = runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table))) and success
     print("Counting keys...")
-    success = runQuery("select count(*) from {t}".format(t = temporaryTableName(table)))
+    success = runQuery("select count(*) from {t}".format(t = temporaryTableName(table.parentTable)))
     maxlen = cursor.fetchall()[0][0]
     print("Declaring cursor...")
     success = runQuery("declare cursor_export_keys_{t} cursor for select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table.parentTable), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")) and success
@@ -495,7 +495,7 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable = default, fetchSize
     success = runQuery("fetch forward {s} from cursor_export_keys_{t}".format(s = fetchSize, t = temporaryTableName(table.parentTable))) and success
     keys = cursor.fetchall()
     print("Filling table...")
-    bar = LargerDequeBar("Parent Entries", max = len(keys), suffix = "%(index)d/%(max)d - ETA: %(eta_td)s     ")
+    bar = LargerDequeBar("Parent Entries", max = maxlen, suffix = "%(index)d/%(max)d - ETA: %(eta_td)s        ")
     while not len(keys) == 0:
         for key in keys:
             if not success:
