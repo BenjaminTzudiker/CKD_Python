@@ -49,7 +49,7 @@ def run(mode = "buffered", filename = "export.csv", buffer = 10000):
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
             runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
-            bar = LargerDequeBar("Rows          ", max = cursor.fetchall()[0][0], suffix = "%(index)d/%(max)d - ETA: %(eta_td)s        ")
+            bar = LargerDequeBar("Rows          ", max = cursor.fetchall()[0][0], suffix = "%(index)d/%(max)d - ETA: %(eta_td)s - Elapsed: %(elapsed_td)s        ")
             while not nextEntry[tableInfo[0]] == None:
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
@@ -470,7 +470,16 @@ def createPrimaryJoinedTemporaryTable(table = default):
     """
     if table == default:
         table = tableInfo[0]
-    query = "select {ta}.{pc} as export_primary, {c} into temporary table {tempt} from {t} as {ta}{whereInclude} order by export_primary asc{order}".format(pc = table.keyColumn.name, c = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(), whereInclude = " where " + table.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (table.whereInclude == "" or table.whereInclude == None) else "", order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
+    
+    query = "select {tableAlias}.{primaryKeyColumn} as export_primary, {columns} into temporary table {tempTable} from {table} as {tableAlias}{whereInclude} order by export_primary asc{order}"
+    query = query.format(tableAlias = countKeyColumnAlias(), 
+                 primaryKeyColumn = table.keyColumn.name, 
+                 columns = ", ".join((countKeyColumnAlias() + "." if column.name in getAllColumnNamesFromTableName(table) else "") + column.name.format(alias = countKeyColumnAlias() + ".") for column in table.columns if column.include > 0), 
+                 tempTable = temporaryTableName(table), 
+                 table = table.name, 
+                 whereInclude = " where " + table.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (table.whereInclude == "" or table.whereInclude == None) else "", 
+                 order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
+    
     return runQuery(query)
 
 def createSecondaryJoinedTemporaryTable(table, primaryTable = default, fetchSize = 10000):
@@ -482,29 +491,80 @@ def createSecondaryJoinedTemporaryTable(table, primaryTable = default, fetchSize
     if primaryTable == default:
         primaryTable = tableInfo[0]
     success = True
+    
     print("Setting up table structure...")
-    success = runQuery("select {refa}.export_primary, {c} into temporary table {tempt} from {t} as {ta} cross join {reft} as {refa} limit 0".format(refa = countKeyColumnAlias(0), c = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns if column.include > 0), tempt = temporaryTableName(table), t = table.name, ta = countKeyColumnAlias(1), reft = temporaryTableName(table.parentTable))) and success
+    
+    query = "select {parentTableAlias}.export_primary, {columns} into temporary table {tempTable} from {table} as {tableAlias} cross join {parentTable} as {parentTableAlias} limit 0"
+    query = query.format(parentTableAlias = countKeyColumnAlias(0), 
+                 columns = ", ".join(countKeyColumnAlias(1) + "." + column.name for column in table.columns if column.include > 0), 
+                 tempTable = temporaryTableName(table), 
+                 table = table.name, 
+                 tableAlias = countKeyColumnAlias(1), 
+                 parentTable = temporaryTableName(table.parentTable))
+    
+    success = runQuery(query) and success
+    
     print("Adding unique identifier column...")
-    success = runQuery("alter table {tempt} add column export_id serial primary key".format(tempt = temporaryTableName(table))) and success
+    
+    query = "alter table {tempTable} add column export_id serial primary key"
+    query = query.format(tempTable = temporaryTableName(table))
+    
+    success = runQuery(query) and success
+    
     print("Counting keys...")
-    success = runQuery("select count(*) from {t}".format(t = temporaryTableName(table.parentTable)))
+    
+    query = "select count(*) from {table}"
+    query = query.format(table = temporaryTableName(table.parentTable))
+    
+    success = runQuery(query)
     maxlen = cursor.fetchall()[0][0]
+    
     print("Declaring cursor...")
-    success = runQuery("declare cursor_export_keys_{t} cursor for select distinct export_primary, {c} from {t} order by export_primary asc".format(c = table.parentKeyColumn.name, t = temporaryTableName(table.parentTable), order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")) and success
+    
+    query = "declare cursor_export_keys_{table} cursor for select distinct export_primary, {columns} from {table} order by export_primary asc"
+    query = query.format(table = temporaryTableName(table.parentTable), 
+                 columns = table.parentKeyColumn.name)
+    
+    success = runQuery(query) and success
+    
     print("Fetching initial entries from cursor...")
-    success = runQuery("fetch forward {s} from cursor_export_keys_{t}".format(s = fetchSize, t = temporaryTableName(table.parentTable))) and success
+    
+    query = "fetch forward {size} from cursor_export_keys_{table}"
+    query = query.format(size = fetchSize, 
+                 table = temporaryTableName(table.parentTable))
+    
+    success = runQuery(query) and success
     keys = cursor.fetchall()
+    
     print("Filling table...")
-    bar = LargerDequeBar("Parent Entries", max = maxlen, suffix = "%(index)d/%(max)d - ETA: %(eta_td)s        ")
+    bar = LargerDequeBar("Parent Entries", max = maxlen, suffix = "%(index)d/%(max)d - ETA: %(eta_td)s - Elapsed: %(elapsed_td)s        ")
+    
     while not len(keys) == 0:
         for key in keys:
             if not success:
                 print("Previous query execution failed, halting...")
                 break
             bar.next()
-            success = runQuery("insert into {tempt} (export_primary, {c}) select {pk}, {c} from {t} where {kc} = {k}{order}{limit}".format(tempt = temporaryTableName(table), c = ", ".join(column.name for column in table.columns if column.include > 0), pk = key[0], t = table.name, kc = table.parentKeyColumn.name, k = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", limit = " limit " + str(table.limit) if table.limit > 0 else "")) and success
-        success = runQuery("fetch forward {s} from cursor_export_keys_{t}".format(s = fetchSize, t = temporaryTableName(table.parentTable))) and success
+            
+            query = "insert into {tempTable} (export_primary, {columns}) select {primaryKeyValue}, {columns} from {table} where {keyColumn} = {keyValue}{order}{limit}"
+            query = query.format(tempTable = temporaryTableName(table), 
+                         columns = ", ".join(column.name for column in table.columns if column.include > 0), 
+                         primaryKeyValue = key[0], 
+                         table = table.name, 
+                         keyColumn = table.parentKeyColumn.name, 
+                         keyValue = "{quotes}{key}{quotes}".format(key = key[1], quotes = '"' if table.parentKeyColumn.type == "variable character" else ""), 
+                         order = (" order by " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", 
+                         limit = " limit " + str(table.limit) if table.limit > 0 else "")
+            
+            success = runQuery(query) and success
+            
+        query = "fetch forward {size} from cursor_export_keys_{table}"
+        query = query.format(size = fetchSize, 
+                     table = temporaryTableName(table.parentTable))
+        
+        success = runQuery(query) and success
         keys = cursor.fetchall()
+        
     bar.finish()
     return success
 
