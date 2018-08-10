@@ -26,10 +26,13 @@ def run(mode = "buffered", filename = "export.csv", buffer = 10000):
     buffer -- Defines the size of each table's buffer for the \"buffered\" mode with no effect on other modes, int (default 10000)
     """
     print("Starting export with mode \"{m}\"...".format(m = mode))
+    
     if mode == "buffered":
+        
         print("Setting up temporary tables...")
         for table in tableInfo:
             createJoinedTemporaryTable(table, tableInfo[0])
+        
         print("Counting maximum entries for secondary tables...")
         bar = Bar("Tables        ", max = len(tableInfo) - 1)
         for i in range(1, len(tableInfo)):
@@ -42,29 +45,46 @@ def run(mode = "buffered", filename = "export.csv", buffer = 10000):
                 bar.next()
                 tableInfo[i].maxEntries = tableInfo[i].parentTable.maxEntries
         bar.finish()
+        
         with open(filename, "w+") as file:
+            
             print("Writing columns...")
             writeColumnHeaders(file)
+            
             print("Writing entries...")
             bufferList = {table:Buffer(table, buffer) for table in tableInfo}
             nextEntry = {table:next(bufferList[table]) for table in tableInfo}
             runQuery("select count(*) from {t}".format(t = temporaryTableName(tableInfo[0])))
             bar = LargerDequeBar("Rows          ", max = cursor.fetchall()[0][0], suffix = "%(index)d/%(max)d - ETA: %(eta_td)s - Elapsed: %(elapsed_td)s        ")
+            
             while not nextEntry[tableInfo[0]] == None:
+                
                 bar.next()
                 primaryKey = nextEntry[tableInfo[0]][0]
+                
                 for table in tableInfo:
+                    
                     entryCount = 0
+                    
                     while not nextEntry[table] == None and nextEntry[table][0] == primaryKey:
+                        
                         entryCount += 1
+                        
                         for i in range(1, len(nextEntry[table])):
+                            
                             file.write(str(nextEntry[table][i]) + ",")
+                            
                         nextEntry[table] = next(bufferList[table])
+                        
                     file.write("," * ((table.maxEntries - entryCount) * len([column for column in table.columns if column.include == 2])))
+                    
                 file.seek(file.tell() - 1)
                 file.write("\n")
+                
             bar.finish()
+            
             print("Export to file {f} completed, exiting.".format(f = filename))
+            
     else:
         print("Counting maximum entries for each table...")
         updateMaxEntries()
@@ -131,6 +151,7 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
         columnNames = [col[0] for col in getAllColumnNamesFromTableName(tableName)]
     if keyColumnName == default:
         keyColumnName = columnNames[0]
+        
     print("Setting up primary table {t}...".format(t = tableName))
     columns = [Column(col[0], col[0], col[1], 2 if col[0] in columnNames else 1 if col[0] == keyColumnName else 0) for col in getAllColumnNamesFromTableName(tableName)]
     keyColumn = getColumnFromName(keyColumnName, columns)
@@ -140,10 +161,12 @@ def setupAddPrimaryTable(tableName, columnNames = default, keyColumnName = defau
     table.displayKeyColumn = displayKeyColumn
     table.whereInclude = whereInclude
     table.whereMarkers = whereMarkers
+    
     if len(tableInfo) == 0:
         tableInfo.append(table)
     else:
         tableInfo[0] = table
+    
     print("Primary table {t} added.".format(t = tableName))
     return table
 
@@ -170,8 +193,10 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         parentTableName = tableInfo[0].table.name
     if parentKeyColumnName == default:
         parentKeyColumnName = keyColumnName
+    
     print("Setting up table {t}...".format(t = tableName))
     if not tableInfo[0] == None:
+        
         columns = [Column(col[0], col[0], col[1], 2 if col[0] in columnNames else 1 if col[0] == keyColumnName else 0) for col in getAllColumnNamesFromTableName(tableName)]
         keyColumn = getColumnFromName(keyColumnName, columns)
         parentTable = getTableFromName(parentTableName)
@@ -183,7 +208,9 @@ def setupAddSecondaryTable(tableName, columnNames = default, keyColumnName = def
         table.forceOneToOne = forceOneToOne
         table.orderBy = orderBy
         table.limit = limit
+        
         tableInfo.append(table)
+        
         print("Table {t} added.".format(t = tableName))
         return table
     else:
@@ -338,7 +365,7 @@ def getColumnFromName(name, collection):
 
 def countKeyColumnAlias(count = 0):
     """
-    Recursive helper function used to get alias names for countMaxEntriesWithKeyColumnQueryConstructor.
+    Returns an SQL table alias as a string for a given integer.
     """
     return "z" * (count + 1)
 
@@ -431,33 +458,41 @@ def createJoinedTemporaryTable(table = default, primaryTable = default):
         table = tableInfo[0]
     if primaryTable == default:
         primaryTable = tableInfo[0]
-    print("Creating temporary table for{p} table {t}...".format(p = " primary" if table == tableInfo[0] else "",t = table.name))
+    
+    print("Creating temporary table for{primary} table {table}...".format(primary = " primary" if table == tableInfo[0] else "", table = table.name))
     if table == primaryTable or table.parentTable == None:
         success = createPrimaryJoinedTemporaryTable(table)
+        
         if success:
             print("Adding unique identifier column...")
             success = runQuery("alter table {table} add column export_id serial primary key".format(table = temporaryTableName(table)))
+            
         else:
             print("Error creating primary key column for temporary table {t}.".format(t = temporaryTableName(table)))
+            
     else:
         success = createSecondaryJoinedTemporaryTable(table, primaryTable)
+    
     if success:
-        print("Creating index...")
-        success = runQuery("create index {index} on {table} (export_primary asc nulls last)".format(index = temporaryTableName(table) + "_primary_index", table = temporaryTableName(table)))
+        print("Creating index on export primary key...")
+        
+        query = "create index {index} on {table} (export_primary asc nulls last{order})"
+        query = query.format(index = temporaryTableName(table) + "_primary_index",
+                    table = temporaryTableName(table),
+                    order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "")
+        
+        success = runQuery(query)
+        
         if success:
-            #print("Counting export primary keys...")
-            #success = runQuery("select count(export_primary) from {t}".format(t = temporaryTableName(table)))
-            if success:
-                print("Analyzing temp table...")
-                runQuery("analyze {t}".format(t = temporaryTableName(table)))
-                conn.commit()
-                return True
-            else:
-                print("Error getting length of temporary table {t}.".format(t = temporaryTableName(table)))
-                return None
+            print("Analyzing temp table...")
+            runQuery("analyze {t}".format(t = temporaryTableName(table)))
+            conn.commit()
+            return True
+        
         else:
             print("Error creating indexes for temporary table {t}.".format(t = temporaryTableName(table)))
             return None
+        
     else:
         print("Error creating temporary table {t}.".format(t = temporaryTableName(table)))
         return None
@@ -478,7 +513,8 @@ def createPrimaryJoinedTemporaryTable(table = default):
                  tempTable = temporaryTableName(table), 
                  table = table.name, 
                  whereInclude = " where " + table.whereInclude.format(alias = countKeyColumnAlias() + ".") if not (table.whereInclude == "" or table.whereInclude == None) else "", 
-                 order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", alias = countKeyColumnAlias() + ".")
+                 order = (", " + ", ".join(order[0] + " " + ("asc" if order[1] == True else "desc") for order in table.orderBy)) if not (table.orderBy == None or len(table.orderBy) == 0) else "", 
+                 alias = countKeyColumnAlias() + ".")
     
     return runQuery(query)
 

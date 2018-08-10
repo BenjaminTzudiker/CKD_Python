@@ -4,6 +4,7 @@
   * Introduction
     * Description
     * Database Setup
+    * Python Setup
   * Run.py
     * Connecting to the Database
     * Setting up the Primary Table
@@ -25,6 +26,10 @@ This repository contains scripts used to export parts of a database to a csv fil
 #### Database Setup
 
 It is *highly* reccommended that you index important columns in your database. In large tables, making indexes on key columns can speed the process up immensely. More info can be found in the Setting up the Secondary Tables section.
+
+#### Python Setup
+
+You will need [python3](python.org) installed in order to run the scripts. You will also need a couple of python modules, which can be downloaded automatically by running the "install.bat" (for Windows) or "install.sh" (for Linux/Mac) scripts located in the project folder.
 
 ### Run.py
 
@@ -171,6 +176,28 @@ Run the command `chmod a+x <path_to_shell>` to gain permission to run the script
 #### Query execution failed while running script
 
 This could be caused by lots of things, but it most likely has to do with improperly defined tables in the setup.
+
+#### Script execution is very slow on temporary table creation step
+
+On larger tables, it's inevitable that this step might take a long time. However, certain things can speed it up substantially. The most important step is making sure all indexes are set up correctly. Exact index setup is database dependent and too large a topic to describe here.
+
+One way to figure out what is causing delays is to have postgres explain query plans. This can be done like so after connecting to postgres in another window:
+
+```sql
+explain <query>;
+```
+
+This will return the query plan, showing information like actions taken (sequential scan, index scan, sort, aggregate, etc) and estimated time taken. If you'd like to actually run the query to get more information, you can use this:
+
+```sql
+explain analyze <query>;
+```
+
+Vacuuming and analyzing tables can also improve performance in some cases:
+
+```sql
+vacuum analyze <table_name>;
+```
 
 ## File Descriptions
 
